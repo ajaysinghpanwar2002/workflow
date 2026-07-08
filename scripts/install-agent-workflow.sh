@@ -39,6 +39,27 @@ chmod +x "$TARGET_ROOT/scripts/agent-status.sh"
 touch "$TARGET_ROOT/.agent/initial-request.md"
 touch "$TARGET_ROOT/.agent/review-history.md"
 
+EXCLUDE_FILE="$TARGET_ROOT/.git/info/exclude"
+
+if ! grep -q "Local Claude + Codex agent workflow" "$EXCLUDE_FILE"; then
+  cat >> "$EXCLUDE_FILE" <<'EOF'
+
+# Local Claude + Codex agent workflow
+CLAUDE.md
+AGENTS.md
+TASK_PLAN.md
+STARTUP_PROMPT.md
+prompts/codex-review.md
+scripts/codex-review.sh
+scripts/agent-status.sh
+.agent/
+EOF
+
+  echo "Added workflow files to .git/info/exclude"
+else
+  echo "Workflow ignore rules already exist in .git/info/exclude"
+fi
+
 echo
 echo "Agent workflow installed."
 echo
