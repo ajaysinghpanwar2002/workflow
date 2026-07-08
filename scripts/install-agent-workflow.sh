@@ -32,6 +32,8 @@ copy_file "$TEMPLATE_ROOT/STARTUP_PROMPT.md" "$TARGET_ROOT/STARTUP_PROMPT.md"
 copy_file "$TEMPLATE_ROOT/prompts/codex-review.md" "$TARGET_ROOT/prompts/codex-review.md"
 copy_file "$TEMPLATE_ROOT/scripts/codex-review.sh" "$TARGET_ROOT/scripts/codex-review.sh"
 copy_file "$TEMPLATE_ROOT/scripts/agent-status.sh" "$TARGET_ROOT/scripts/agent-status.sh"
+copy_file "$TEMPLATE_ROOT/prompts/pre-compact.md" "$TARGET_ROOT/prompts/pre-compact.md"
+copy_file "$TEMPLATE_ROOT/prompts/post-compact-restart.md" "$TARGET_ROOT/prompts/post-compact-restart.md"
 
 chmod +x "$TARGET_ROOT/scripts/codex-review.sh"
 chmod +x "$TARGET_ROOT/scripts/agent-status.sh"
@@ -52,6 +54,8 @@ STARTUP_PROMPT.md
 prompts/codex-review.md
 scripts/codex-review.sh
 scripts/agent-status.sh
+prompts/pre-compact.md
+prompts/post-compact-restart.md
 .agent/
 EOF
 
