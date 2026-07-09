@@ -9,6 +9,7 @@ mkdir -p .agent
 DIFF_FILE=".agent/current-diff.patch"
 PROMPT_FILE=".agent/codex-review-prompt.md"
 REVIEW_FILE=".agent/latest-codex-review.md"
+REVIEW_WORKDIR="${TMPDIR:-/tmp}/codex-review-workflow"
 
 git diff --binary > "$DIFF_FILE"
 
@@ -17,10 +18,13 @@ if [ ! -s "$DIFF_FILE" ]; then
   exit 1
 fi
 
+mkdir -p "$REVIEW_WORKDIR"
+
 cat > "$PROMPT_FILE" <<'EOF'
 You are reviewing a local code change.
 
-You are read-only.
+You are the separate Codex reviewer process launched by scripts/codex-review.sh.
+You are read-only in this process.
 Do not edit files.
 Do not run commands that modify files.
 Do not suggest unrelated refactors.
@@ -32,8 +36,11 @@ EOF
   cat "$PROMPT_FILE"
 
   echo
-  echo "===== AGENTS.md ====="
-  cat AGENTS.md 2>/dev/null || true
+  echo "Repository root for optional read-only inspection: $ROOT"
+
+  echo
+  echo "===== IMPLEMENTER.md ====="
+  cat IMPLEMENTER.md 2>/dev/null || true
 
   echo
   echo "===== TASK_PLAN.md ====="
@@ -59,7 +66,7 @@ EOF
   echo "===== CURRENT GIT DIFF START ====="
   cat "$DIFF_FILE"
   echo "===== CURRENT GIT DIFF END ====="
-} | codex exec --sandbox read-only - | tee "$REVIEW_FILE"
+} | codex exec --sandbox read-only --cd "$REVIEW_WORKDIR" --skip-git-repo-check - | tee "$REVIEW_FILE"
 
 echo
 echo "Codex review written to: $REVIEW_FILE"

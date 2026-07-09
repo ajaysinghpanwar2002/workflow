@@ -1,6 +1,7 @@
 # Pre-Compact Handoff Prompt
 
-Before the conversation is compacted, update the durable workflow files so the next Claude Code session can continue safely.
+Before the conversation is compacted, update the durable workflow files so the
+next implementer session can continue safely.
 
 Do not implement anything new.
 
@@ -51,4 +52,3 @@ Then produce a compact handoff summary with this format:
 
 ### Important Context
 ...
-

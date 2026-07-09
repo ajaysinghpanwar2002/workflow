@@ -27,8 +27,8 @@ copy_file() {
 
 copy_file "$TEMPLATE_ROOT/CLAUDE.md" "$TARGET_ROOT/CLAUDE.md"
 copy_file "$TEMPLATE_ROOT/AGENTS.md" "$TARGET_ROOT/AGENTS.md"
+copy_file "$TEMPLATE_ROOT/IMPLEMENTER.md" "$TARGET_ROOT/IMPLEMENTER.md"
 copy_file "$TEMPLATE_ROOT/TASK_PLAN.md" "$TARGET_ROOT/TASK_PLAN.md"
-copy_file "$TEMPLATE_ROOT/STARTUP_PROMPT.md" "$TARGET_ROOT/STARTUP_PROMPT.md"
 copy_file "$TEMPLATE_ROOT/prompts/codex-review.md" "$TARGET_ROOT/prompts/codex-review.md"
 copy_file "$TEMPLATE_ROOT/scripts/codex-review.sh" "$TARGET_ROOT/scripts/codex-review.sh"
 copy_file "$TEMPLATE_ROOT/scripts/agent-status.sh" "$TARGET_ROOT/scripts/agent-status.sh"
@@ -42,31 +42,37 @@ touch "$TARGET_ROOT/.agent/initial-request.md"
 touch "$TARGET_ROOT/.agent/review-history.md"
 
 EXCLUDE_FILE="$TARGET_ROOT/.git/info/exclude"
+EXCLUDE_MARKER="# Local implementer + Codex reviewer workflow"
 
-if ! grep -q "Local Claude + Codex agent workflow" "$EXCLUDE_FILE"; then
-  cat >> "$EXCLUDE_FILE" <<'EOF'
-
-# Local Claude + Codex agent workflow
-CLAUDE.md
-AGENTS.md
-TASK_PLAN.md
-STARTUP_PROMPT.md
-prompts/codex-review.md
-scripts/codex-review.sh
-scripts/agent-status.sh
-prompts/pre-compact.md
-prompts/post-compact-restart.md
-.agent/
-EOF
-
-  echo "Added workflow files to .git/info/exclude"
-else
-  echo "Workflow ignore rules already exist in .git/info/exclude"
+if ! grep -qxF "$EXCLUDE_MARKER" "$EXCLUDE_FILE"; then
+  printf '\n%s\n' "$EXCLUDE_MARKER" >> "$EXCLUDE_FILE"
 fi
+
+add_exclude() {
+  local pattern="$1"
+
+  if ! grep -qxF "$pattern" "$EXCLUDE_FILE"; then
+    printf '%s\n' "$pattern" >> "$EXCLUDE_FILE"
+  fi
+}
+
+add_exclude "CLAUDE.md"
+add_exclude "AGENTS.md"
+add_exclude "IMPLEMENTER.md"
+add_exclude "TASK_PLAN.md"
+add_exclude "prompts/codex-review.md"
+add_exclude "scripts/codex-review.sh"
+add_exclude "scripts/agent-status.sh"
+add_exclude "prompts/pre-compact.md"
+add_exclude "prompts/post-compact-restart.md"
+add_exclude ".agent/"
+
+echo "Ensured workflow files are listed in .git/info/exclude"
 
 echo
 echo "Agent workflow installed."
 echo
 echo "Next:"
-echo "1. Open Claude Code from this repo."
-echo "2. Ask Claude: Read @STARTUP_PROMPT.md and follow it."
+echo "1. Open Claude Code or Codex from this repo."
+echo "2. In Claude Code, ask: Read @CLAUDE.md and follow it."
+echo "3. In Codex CLI, ask: Read @AGENTS.md and follow it."

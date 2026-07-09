@@ -2,7 +2,7 @@
 
 ## Goal
 
-<Claude should write the agreed feature/change request here.>
+<The implementer should write the agreed feature/change request here.>
 
 ## Status
 
