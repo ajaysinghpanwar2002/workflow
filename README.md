@@ -13,6 +13,18 @@ process as the reviewer.
 Both entry files delegate to `IMPLEMENTER.md`, which contains the shared
 implementation loop.
 
+## Install Into A Codebase
+
+From a fresh pull of this workflow repo, open the codebase where you want to use
+the workflow and run:
+
+```bash
+/path/to/workflow/scripts/install-agent-workflow.sh
+```
+
+The installer copies the workflow files into that codebase and adds them to the
+target repo's `.git/info/exclude`.
+
 ## Review Loop
 
 1. Implement one cohesive slice.
@@ -31,3 +43,4 @@ implementation loop.
 - `prompts/codex-review.md`: reviewer-only prompt.
 - `prompts/pre-compact.md`: handoff prompt before compaction.
 - `scripts/codex-review.sh`: launches the separate read-only Codex reviewer.
+- `scripts/agent-status.sh`: optional status snapshot for the user or implementer.
