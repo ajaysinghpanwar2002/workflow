@@ -10,6 +10,8 @@ DIFF_FILE=".agent/current-diff.patch"
 PROMPT_FILE=".agent/codex-review-prompt.md"
 REVIEW_FILE=".agent/latest-codex-review.md"
 REVIEW_WORKDIR="${TMPDIR:-/tmp}/codex-review-workflow"
+CODEX_REVIEW_MODEL="${CODEX_REVIEW_MODEL:-gpt-5.5}"
+CODEX_REVIEW_REASONING_EFFORT="${CODEX_REVIEW_REASONING_EFFORT:-xhigh}"
 
 git diff --binary > "$DIFF_FILE"
 
@@ -37,6 +39,8 @@ EOF
 
   echo
   echo "Repository root for optional read-only inspection: $ROOT"
+  echo "Reviewer model: $CODEX_REVIEW_MODEL"
+  echo "Reviewer reasoning effort: $CODEX_REVIEW_REASONING_EFFORT"
 
   echo
   echo "===== IMPLEMENTER.md ====="
@@ -66,7 +70,13 @@ EOF
   echo "===== CURRENT GIT DIFF START ====="
   cat "$DIFF_FILE"
   echo "===== CURRENT GIT DIFF END ====="
-} | codex exec --sandbox read-only --cd "$REVIEW_WORKDIR" --skip-git-repo-check - | tee "$REVIEW_FILE"
+} | codex exec \
+  --model "$CODEX_REVIEW_MODEL" \
+  --config "model_reasoning_effort=\"$CODEX_REVIEW_REASONING_EFFORT\"" \
+  --sandbox read-only \
+  --cd "$REVIEW_WORKDIR" \
+  --skip-git-repo-check \
+  - | tee "$REVIEW_FILE"
 
 echo
 echo "Codex review written to: $REVIEW_FILE"
