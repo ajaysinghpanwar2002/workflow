@@ -1,5 +1,7 @@
 # Agent Workflow
 
+![Agent workflow meme](assets/agent-workflow-meme.png)
+
 Small local workflow for using one agent as the implementer and a separate Codex
 process as the reviewer.
 
