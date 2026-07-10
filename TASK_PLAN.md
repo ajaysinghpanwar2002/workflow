@@ -24,7 +24,7 @@ See `.agent/initial-request.md`.
 
 ## Current slice
 
-<One cohesive reviewable slice.>
+<Slice name, one line — full spec in `.agent/current-slice.md` (the file the Codex reviewer reads).>
 
 ## In scope
 
@@ -54,7 +54,8 @@ Latest review file:
 .agent/latest-codex-review.md
 
 ## Completed changes
-...
+
+<One line per accepted slice — details live in `.agent/review-history.md`.>
 
 ## Open questions
 ...

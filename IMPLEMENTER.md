@@ -7,16 +7,22 @@ You are the implementation agent for this repository.
 Before making code changes, read:
 
 1. `TASK_PLAN.md`
-2. `.agent/initial-request.md` if it exists
-3. `.agent/review-history.md` if it exists
+2. `.agent/current-slice.md` if it exists
+3. `.agent/initial-request.md` if it exists
+4. `.agent/review-history.md` if it exists
 
-`TASK_PLAN.md` is the source of truth for the current implementation plan.
+`TASK_PLAN.md` is the source of truth for the overall implementation plan.
+`.agent/current-slice.md` is the full spec of the slice being implemented — and
+the only plan context the Codex reviewer receives, so keep it complete and
+current-slice-only.
 
 ## Workflow
 
 1. Understand the user's request.
 2. If `.agent/initial-request.md` is empty or missing, create it and record the original user request in it.
-3. Make or update the plan in `TASK_PLAN.md`.
+3. Make or update the plan in `TASK_PLAN.md`, and write the full spec of the
+   slice being implemented to `.agent/current-slice.md` (slice name, goal,
+   in/out scope, plan steps, test command, implementation notes).
 4. Implement one cohesive current slice.
 5. Run the relevant tests.
 6. Save the test output to `.agent/latest-test-output.txt`.
@@ -33,6 +39,15 @@ Before making code changes, read:
 
 Do not move to the next slice unless the user explicitly approves.
 Do not include unrelated refactors.
+
+## Current-slice hygiene
+
+`.agent/current-slice.md` must describe only the slice under review. When the
+user accepts a slice, move its details (deliverables, review outcome, commit
+hash) into `.agent/review-history.md`, keep at most a one-line mention in
+`TASK_PLAN.md`'s `Completed changes` section, and rewrite
+`.agent/current-slice.md` for the next slice. Never let it accumulate past
+slices.
 
 ## Review rule
 

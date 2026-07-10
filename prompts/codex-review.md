@@ -10,12 +10,14 @@ Do not run commands that modify files.
 Review only the current implementation slice.
 
 Read the provided context carefully:
-- shared implementer workflow
-- task plan
+- current slice spec (the plan for the change under review)
 - original user request
-- previous review history
-- latest test output
+- previous Codex review, if any
+- latest test output (possibly truncated to the last lines)
 - current git diff
+
+If HISTORY_CHECK needs more than the previous review, the full history is
+available read-only at `.agent/review-history.md` under the repository root.
 
 Your job is to decide whether the current diff is ready for user review.
 
@@ -26,7 +28,7 @@ Check:
 4. Error handling
 5. Test coverage
 6. Idiomatic code
-7. Whether the implementation matches the task plan
+7. Whether the implementation matches the current slice spec
 8. Whether previous blocking feedback was addressed
 
 Avoid broad rewrite suggestions unless necessary.

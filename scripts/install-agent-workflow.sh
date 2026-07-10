@@ -39,6 +39,7 @@ chmod +x "$TARGET_ROOT/scripts/agent-status.sh"
 
 touch "$TARGET_ROOT/.agent/initial-request.md"
 touch "$TARGET_ROOT/.agent/review-history.md"
+touch "$TARGET_ROOT/.agent/current-slice.md"
 
 EXCLUDE_FILE="$TARGET_ROOT/.git/info/exclude"
 EXCLUDE_MARKER="# Local implementer + Codex reviewer workflow"
