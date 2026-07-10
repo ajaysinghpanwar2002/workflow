@@ -12,6 +12,7 @@ fi
 mkdir -p "$TARGET_ROOT/prompts"
 mkdir -p "$TARGET_ROOT/scripts"
 mkdir -p "$TARGET_ROOT/.agent"
+mkdir -p "$TARGET_ROOT/.codex/rules"
 
 copy_file() {
   local src="$1"
@@ -33,6 +34,7 @@ copy_file "$TEMPLATE_ROOT/prompts/codex-review.md" "$TARGET_ROOT/prompts/codex-r
 copy_file "$TEMPLATE_ROOT/scripts/codex-review.sh" "$TARGET_ROOT/scripts/codex-review.sh"
 copy_file "$TEMPLATE_ROOT/scripts/agent-status.sh" "$TARGET_ROOT/scripts/agent-status.sh"
 copy_file "$TEMPLATE_ROOT/prompts/pre-compact.md" "$TARGET_ROOT/prompts/pre-compact.md"
+copy_file "$TEMPLATE_ROOT/.codex/rules/agent-workflow.rules" "$TARGET_ROOT/.codex/rules/agent-workflow.rules"
 
 chmod +x "$TARGET_ROOT/scripts/codex-review.sh"
 chmod +x "$TARGET_ROOT/scripts/agent-status.sh"
@@ -64,6 +66,7 @@ add_exclude "prompts/codex-review.md"
 add_exclude "scripts/codex-review.sh"
 add_exclude "scripts/agent-status.sh"
 add_exclude "prompts/pre-compact.md"
+add_exclude ".codex/rules/agent-workflow.rules"
 add_exclude ".agent/"
 
 echo "Ensured workflow files are listed in .git/info/exclude"
@@ -75,3 +78,9 @@ echo "Next:"
 echo "1. Open Claude Code or Codex from this repo."
 echo "2. In Claude Code, ask: Read @CLAUDE.md and follow it."
 echo "3. In Codex CLI, ask: Read @AGENTS.md and follow it."
+echo
+echo "Codex as the implementer: .codex/rules/agent-workflow.rules pre-authorizes"
+echo "scripts/codex-review.sh to run outside the Codex sandbox (the nested reviewer"
+echo "needs network access). Project rules load only once you trust this repo's"
+echo ".codex/ layer in Codex; until then, approve the escalation prompt when the"
+echo "script runs. Keep the rule project-scoped; do not copy it into ~/.codex/rules/."

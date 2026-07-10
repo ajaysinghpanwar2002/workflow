@@ -18,6 +18,18 @@ CODEX_REVIEW_MODEL="${CODEX_REVIEW_MODEL:-gpt-5.6-sol}"
 CODEX_REVIEW_REASONING_EFFORT="${CODEX_REVIEW_REASONING_EFFORT:-high}"
 CODEX_REVIEW_DRY_RUN="${CODEX_REVIEW_DRY_RUN:-0}"
 
+# The reviewer is a nested `codex exec` call and needs network access, so this
+# script cannot run inside a Codex implementer's sandbox. Fail fast with a
+# pointer instead of a late, cryptic network error. Commands allowed to run
+# outside the sandbox (via .codex/rules/ or an approved escalation) never see
+# this variable.
+if [ "${CODEX_SANDBOX_NETWORK_DISABLED:-}" = "1" ] && [ "$CODEX_REVIEW_DRY_RUN" != "1" ]; then
+  echo "ERROR: running inside a network-disabled Codex sandbox; the nested reviewer cannot reach the API." >&2
+  echo "Re-run this script outside the sandbox: request escalated permissions, or make sure the" >&2
+  echo "allow rule in .codex/rules/agent-workflow.rules is loaded (the project .codex/ layer must be trusted)." >&2
+  exit 2
+fi
+
 git diff --binary > "$DIFF_FILE"
 
 if [ ! -s "$DIFF_FILE" ]; then

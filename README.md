@@ -25,6 +25,22 @@ the workflow and run:
 The installer copies the workflow files into that codebase and adds them to the
 target repo's `.git/info/exclude`.
 
+## Codex As The Implementer
+
+The reviewer is a nested `codex exec` process and needs network access, so
+`scripts/codex-review.sh` cannot run inside the Codex implementer's sandbox.
+`.codex/rules/agent-workflow.rules` fixes this with a Codex execpolicy allow
+rule that lets exactly that one script run outside the sandbox without
+prompting — everything else the implementer does stays sandboxed, and the
+reviewer itself still runs with `--sandbox read-only` in a temp working
+directory. The flow stays identical for both implementers; no model-side
+branching.
+
+Project rules load only once you trust the repo's `.codex/` layer in Codex.
+Until then, approve the escalation prompt when the script runs. Keep the rule
+project-scoped: copied into `~/.codex/rules/` it would authorize
+`scripts/codex-review.sh` in every repository, including untrusted ones.
+
 ## Review Loop
 
 1. Implement one cohesive slice.
@@ -44,3 +60,4 @@ target repo's `.git/info/exclude`.
 - `prompts/pre-compact.md`: handoff prompt before compaction.
 - `scripts/codex-review.sh`: launches the separate read-only Codex reviewer.
 - `scripts/agent-status.sh`: optional status snapshot for the user or implementer.
+- `.codex/rules/agent-workflow.rules`: lets Codex-as-implementer run the review script outside its sandbox.
