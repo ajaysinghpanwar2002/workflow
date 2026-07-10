@@ -10,8 +10,8 @@ DIFF_FILE=".agent/current-diff.patch"
 PROMPT_FILE=".agent/codex-review-prompt.md"
 REVIEW_FILE=".agent/latest-codex-review.md"
 REVIEW_WORKDIR="${TMPDIR:-/tmp}/codex-review-workflow"
-CODEX_REVIEW_MODEL="${CODEX_REVIEW_MODEL:-gpt-5.5}"
-CODEX_REVIEW_REASONING_EFFORT="${CODEX_REVIEW_REASONING_EFFORT:-xhigh}"
+CODEX_REVIEW_MODEL="${CODEX_REVIEW_MODEL:-gpt-5.6-sol}"
+CODEX_REVIEW_REASONING_EFFORT="${CODEX_REVIEW_REASONING_EFFORT:-high}"
 
 git diff --binary > "$DIFF_FILE"
 
