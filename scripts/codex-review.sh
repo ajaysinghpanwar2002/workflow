@@ -65,10 +65,6 @@ mkdir -p "$REVIEW_WORKDIR"
   cat "$SLICE_FILE"
 
   echo
-  echo "===== ORIGINAL USER REQUEST ====="
-  cat .agent/initial-request.md 2>/dev/null || true
-
-  echo
   echo "===== PREVIOUS CODEX REVIEW (may be from an earlier slice; absent on first review) ====="
   cat "$PREVIOUS_REVIEW_FILE" 2>/dev/null || true
 

@@ -11,7 +11,6 @@ Review only the current implementation slice.
 
 Read the provided context carefully:
 - current slice spec (the plan for the change under review)
-- original user request
 - previous Codex review, if any
 - latest test output (possibly truncated to the last lines)
 - current git diff
