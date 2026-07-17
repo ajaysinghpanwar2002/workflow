@@ -34,6 +34,7 @@ copy_file "$TEMPLATE_ROOT/prompts/codex-review.md" "$TARGET_ROOT/prompts/codex-r
 copy_file "$TEMPLATE_ROOT/scripts/codex-review.sh" "$TARGET_ROOT/scripts/codex-review.sh"
 copy_file "$TEMPLATE_ROOT/scripts/agent-status.sh" "$TARGET_ROOT/scripts/agent-status.sh"
 copy_file "$TEMPLATE_ROOT/prompts/pre-compact.md" "$TARGET_ROOT/prompts/pre-compact.md"
+copy_file "$TEMPLATE_ROOT/prompts/pre-new-session.md" "$TARGET_ROOT/prompts/pre-new-session.md"
 copy_file "$TEMPLATE_ROOT/.codex/rules/agent-workflow.rules" "$TARGET_ROOT/.codex/rules/agent-workflow.rules"
 
 chmod +x "$TARGET_ROOT/scripts/codex-review.sh"
@@ -66,6 +67,7 @@ add_exclude "prompts/codex-review.md"
 add_exclude "scripts/codex-review.sh"
 add_exclude "scripts/agent-status.sh"
 add_exclude "prompts/pre-compact.md"
+add_exclude "prompts/pre-new-session.md"
 add_exclude ".codex/rules/agent-workflow.rules"
 add_exclude ".agent/"
 
