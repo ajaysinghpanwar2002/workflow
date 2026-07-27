@@ -1,67 +1,42 @@
 # Task Plan
 
-## Goal
+Durable state for the work in progress. Keep it short and current: rewrite
+sections as the work moves rather than accumulating history.
 
-<The implementer should write the agreed feature/change request here.>
+Pointers: original request in `.agent/initial-request.md`, current slice spec in
+`.agent/current-slice.md`, latest review in `.agent/latest-codex-review.md`,
+accepted slices in `.agent/review-history.md`.
 
 ## Status
 
 Not started
 
-Allowed statuses:
-- Not started
-- Planning
-- In progress
-- Waiting for Codex review
-- Addressing Codex feedback
-- Waiting for user review
-- Done
-- Blocked
+Use exactly one of: `Not started`, `Planning`, `In progress`,
+`Waiting for Codex review`, `Addressing Codex feedback`,
+`Waiting for user review`, `Done`, `Blocked`. This is the field the user reads to
+know whether the loop needs them, so keep it accurate.
 
-## Initial user request
+## Goal
 
-See `.agent/initial-request.md`.
+<What the user asked for, in a sentence or two.>
 
 ## Current slice
 
-<Slice name, one line — full spec in `.agent/current-slice.md` (the file the Codex reviewer reads).>
-
-## In scope
-
-- ...
-
-## Out of scope
-
-- ...
+<One line. The full spec lives in `.agent/current-slice.md`.>
 
 ## Plan
 
-1. ...
-2. ...
-3. ...
+<The plan for the whole change, in whatever structure fits the work — steps,
+phases, a table, prose. It only has to make clear what is being built, in what
+order, and where the current slice sits in that order. Do not pad it with
+headings that have nothing to say.>
 
-## Test command
+## Accepted slices
 
-```bash
-<write the relevant test command here>
-```
+<One line per slice the user has accepted; details live in
+`.agent/review-history.md`. Delete this section's placeholder once real entries
+exist.>
 
-## Current implementation notes
-...
+## Blocked on / open questions
 
-## Codex review result
-Latest review file:
-.agent/latest-codex-review.md
-
-## Completed changes
-
-<One line per accepted slice — details live in `.agent/review-history.md`.>
-
-## Open questions
-...
-
-## Next suggested slice
-...
-
-
----
+<Anything that needs the user's judgment, or nothing.>

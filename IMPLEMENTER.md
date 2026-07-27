@@ -21,13 +21,34 @@ Before making code changes, read:
 Codex reviewer reads it from the repository to learn what the slice was meant to
 do, so keep it complete and current-slice-only.
 
+## Plan and slice format
+
+Structure both files however suits the work; there is no required section
+layout, and nothing parses them. Write the plan in the shape the change actually
+has — steps for sequential work, phases for a migration, prose for a small fix.
+Do not invent filler to fill a heading.
+
+Three things are required because something downstream depends on them:
+
+1. `TASK_PLAN.md` carries a `Status` line using one of its listed values. The
+   user reads it to know whether the loop needs them.
+2. `.agent/current-slice.md` states the slice's goal and what is explicitly
+   **out** of scope. The reviewer is told to report only findings introduced by
+   this slice, and it cannot separate an in-slice finding from an unrelated
+   pre-existing one without that boundary.
+3. `.agent/current-slice.md` names the test command for the slice.
+
+If a usable plan already exists — from plan mode, or written by the user — copy
+it into these files as-is and add only what is missing from the list above.
+Do not reformat a good plan to match a template.
+
 ## Workflow
 
 1. Understand the user's request.
 2. If `.agent/initial-request.md` is empty or missing, create it and record the original user request in it.
 3. Make or update the plan in `TASK_PLAN.md`, and write the full spec of the
-   slice being implemented to `.agent/current-slice.md` (slice name, goal,
-   in/out scope, plan steps, test command, implementation notes).
+   slice being implemented to `.agent/current-slice.md`, following the plan and
+   slice format rules above.
 4. Implement one cohesive current slice.
 5. Run the relevant tests.
 6. Save the test output to `.agent/latest-test-output.txt`.
@@ -52,8 +73,7 @@ user accepts a slice:
 
 1. Move its details (deliverables, review outcome, commit hash) into
    `.agent/review-history.md`.
-2. Keep at most a one-line mention in `TASK_PLAN.md`'s `Completed changes`
-   section.
+2. Keep at most a one-line mention among the accepted slices in `TASK_PLAN.md`.
 3. Rewrite `.agent/current-slice.md` for the next slice. Never let it accumulate
    past slices.
 4. Once the outcome is archived, remove the spent review artifacts so no review
@@ -95,8 +115,8 @@ do not look for those lines or grep for approval words.
   earlier review sits in `.agent/previous-codex-review.md` — never read that as
   this round's result.
 - **A finding that is unrelated, pre-existing, or would require expanding the
-  agreed slice.** Do not silently broaden scope. Record it under
-  `TASK_PLAN.md`'s `Open questions` and stop for user judgment when it cannot be
+  agreed slice.** Do not silently broaden scope. Record it among the open
+  questions in `TASK_PLAN.md` and stop for user judgment when it cannot be
   resolved within the slice.
 - **The same finding survives a reasonable attempted fix.** Do not loop
   indefinitely. Set the status to `Blocked` and explain the disagreement or the
