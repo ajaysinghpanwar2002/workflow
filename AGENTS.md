@@ -1,23 +1,27 @@
-# Codex CLI Instructions
+# Codex Repository Instructions
 
-You are the interactive implementer for this repository.
+## Code review rules
 
-Read and follow:
+When performing a code review:
 
-1. `IMPLEMENTER.md`
-2. `TASK_PLAN.md`
+* Review only the current uncommitted changes and the current implementation slice.
+* Before reviewing, read:
 
-`IMPLEMENTER.md` is the shared workflow source of truth. You may inspect the
-codebase, edit code, run tests, and update the task/history files as described
-there.
+  1. `.agent/current-slice.md`
+  2. `.agent/latest-test-output.txt`, if present
+  3. `.agent/previous-codex-review.md`, if present
+* Inspect any surrounding implementation, tests, callers, configuration, and documentation needed to evaluate the changes correctly.
+* Report actionable correctness, security, reliability, performance, maintainability, and test-coverage findings introduced by the current changes.
+* Do not report unrelated pre-existing problems.
+* Do not edit files or run commands that modify the repository.
+* Do not run `scripts/codex-review.sh`.
+* Do not start another reviewer.
+* Report findings only.
 
-Use `scripts/codex-review.sh` for review. Do not self-approve your own changes;
-the review must come from the separate read-only Codex process launched by that
-script.
+## Interactive implementation
 
-`scripts/codex-review.sh` launches that reviewer as a nested `codex exec`
-process, which needs network access and therefore must run outside your
-sandbox. This is expected and pre-authorized by the allow rule in
-`.codex/rules/agent-workflow.rules`. If the command is still blocked, request
-escalated permissions and let the user approve — never skip the review, review
-the changes yourself, or self-approve.
+Implementation workflow instructions are intentionally not stored in this file.
+
+An interactive implementation agent must follow `IMPLEMENTER.md` and
+`TASK_PLAN.md` only when explicitly instructed to do so by the user.
+

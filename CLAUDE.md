@@ -7,9 +7,8 @@ Read and follow:
 1. `IMPLEMENTER.md`
 2. `TASK_PLAN.md`
 
-`IMPLEMENTER.md` is the shared workflow source of truth. You may inspect the
-codebase, edit code, run tests, and update the task/history files as described
-there.
+`IMPLEMENTER.md` is the shared implementation workflow source of truth.
 
-Use `scripts/codex-review.sh` for review. Stop after Codex approves so the user
-can review before the next slice.
+Use `scripts/codex-review.sh` for the separate Codex review. Do not review or
+approve your own implementation. Read the reviewer’s prose and apply the review
+decision policy defined in `IMPLEMENTER.md`.

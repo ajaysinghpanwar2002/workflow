@@ -2,6 +2,11 @@
 
 You are the implementation agent for this repository.
 
+This file describes the implementer role only. A Codex process started by
+`scripts/codex-review.sh` (`codex exec review`) is the reviewer, not the
+implementer, and must not follow this workflow — see the role boundary in
+`AGENTS.md`.
+
 ## Required files
 
 Before making code changes, read:
@@ -12,9 +17,9 @@ Before making code changes, read:
 4. `.agent/review-history.md` if it exists
 
 `TASK_PLAN.md` is the source of truth for the overall implementation plan.
-`.agent/current-slice.md` is the full spec of the slice being implemented — and
-the only plan context the Codex reviewer receives, so keep it complete and
-current-slice-only.
+`.agent/current-slice.md` is the full spec of the slice being implemented. The
+Codex reviewer reads it from the repository to learn what the slice was meant to
+do, so keep it complete and current-slice-only.
 
 ## Workflow
 
@@ -27,9 +32,9 @@ current-slice-only.
 5. Run the relevant tests.
 6. Save the test output to `.agent/latest-test-output.txt`.
 7. Run `scripts/codex-review.sh`.
-8. Read `.agent/latest-codex-review.md`.
-9. If Codex returns `CHANGES_REQUESTED`, fix only the blocking issues and repeat the review loop.
-10. If Codex returns `APPROVED`, update `TASK_PLAN.md` and `.agent/review-history.md`.
+8. Read `.agent/latest-codex-review.md` and apply the review decision policy below.
+9. Repeat steps 4-8 while the review reports actionable findings.
+10. When the review is clean, update `TASK_PLAN.md` and `.agent/review-history.md`.
 11. Set `TASK_PLAN.md` status to `Waiting for user review`.
 12. Stop and explain:
     - what changed
@@ -51,7 +56,41 @@ slices.
 
 ## Review rule
 
-Use `scripts/codex-review.sh` for review.
+Use `scripts/codex-review.sh` for review. It launches a separate read-only
+Codex reviewer in dedicated review mode (`codex exec review --uncommitted`),
+which reviews the current staged, unstaged, and untracked changes and may read
+the rest of the repository for context.
 
-The review script starts a separate read-only Codex process. Do not ask that
-reviewer process to edit files. Do not self-approve changes.
+Do not ask that reviewer process to edit files. Do not substitute your own
+review for it. Do not self-approve changes.
+
+## Review decision policy
+
+`.agent/latest-codex-review.md` contains human-readable review prose — not JSON
+and not a status token. Read it and judge it on its content. The old
+`REVIEW_STATUS: APPROVED` / `REVIEW_STATUS: CHANGES_REQUESTED` format is gone;
+do not look for those lines or grep for approval words.
+
+- **One or more concrete findings or review comments.** Address every actionable
+  finding caused by the current slice, rerun the relevant tests, save the new
+  output to `.agent/latest-test-output.txt`, and run
+  `scripts/codex-review.sh` again.
+- **A completed review that clearly reports no findings and no correctness
+  concern.** Treat the review as clean: update `TASK_PLAN.md` and
+  `.agent/review-history.md`, set the status to `Waiting for user review`,
+  summarize, and stop.
+- **Ambiguous, contradictory, truncated, empty, or failed review.** Do not infer
+  approval. Set the status to `Blocked`, say what happened, and stop for the
+  user. A nonzero exit from `scripts/codex-review.sh` means no review was
+  produced: the script leaves `.agent/latest-codex-review.md` absent, and any
+  earlier review sits in `.agent/previous-codex-review.md` — never read that as
+  this round's result.
+- **A finding that is unrelated, pre-existing, or would require expanding the
+  agreed slice.** Do not silently broaden scope. Record it under
+  `TASK_PLAN.md`'s `Open questions` and stop for user judgment when it cannot be
+  resolved within the slice.
+- **The same finding survives a reasonable attempted fix.** Do not loop
+  indefinitely. Set the status to `Blocked` and explain the disagreement or the
+  unresolved condition.
+
+Passing tests are never on their own grounds for approval.
