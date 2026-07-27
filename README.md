@@ -8,10 +8,14 @@ process as the reviewer.
 ## Start
 
 - Claude Code: read `CLAUDE.md` and follow it.
-- Codex CLI:  read `AGENTS.md` You are the interactive implementer, not the Codex reviewer.
+- Codex CLI: say "You are the interactive implementer, not the Codex reviewer.
+  Read `AGENTS.md` and follow it."
 
-Both entry files delegate to `IMPLEMENTER.md`, which contains the shared
-implementation loop.
+`IMPLEMENTER.md` holds the shared implementation loop. `CLAUDE.md` points to it
+directly. `AGENTS.md` deliberately does not: it is the file the dedicated Codex
+reviewer reads, so it carries the review rules and defers the implementation
+workflow to an explicit user instruction. That keeps a reviewer launched at the
+repository root from picking up the implementer loop.
 
 ## Install Into A Codebase
 
@@ -22,8 +26,10 @@ the workflow and run:
 /path/to/workflow/scripts/install-agent-workflow.sh
 ```
 
-The installer copies the workflow files into that codebase and adds them to the
-target repo's `.git/info/exclude`.
+The installer copies `CLAUDE.md`, `AGENTS.md`, `IMPLEMENTER.md`, `TASK_PLAN.md`,
+the two scripts, and `.codex/rules/agent-workflow.rules` into that codebase,
+creates the `.agent/` working files, and adds all of it to the target repo's
+`.git/info/exclude`. It never overwrites a file that already exists.
 
 ## Codex As The Implementer
 
@@ -57,16 +63,16 @@ project-scoped: copied into `~/.codex/rules/` it would authorize
    cannot pass as the current result.
 
 The reviewer returns human-readable findings; there is no status token or JSON
-verdict to parse. `IMPLEMENTER.md` holds the full decision policy.
+verdict to parse. `IMPLEMENTER.md` holds the full decision policy, and the
+cleanup to run once the user accepts a slice.
 
 ## Files
 
 - `CLAUDE.md`: Claude Code entry instructions.
-- `AGENTS.md`: Codex CLI entry instructions, and the reviewer/implementer role
-  boundary the dedicated reviewer reads.
-- `IMPLEMENTER.md`: shared implementer workflow.
+- `AGENTS.md`: Codex review rules, read by the dedicated reviewer; holds no
+  implementation workflow by design.
+- `IMPLEMENTER.md`: shared implementer workflow and review decision policy.
 - `TASK_PLAN.md`: durable task plan and status.
-- `prompts/pre-compact.md`: handoff prompt before compaction.
 - `scripts/codex-review.sh`: launches the separate read-only Codex reviewer in
   dedicated review mode.
 - `scripts/agent-status.sh`: optional status snapshot for the user or implementer.

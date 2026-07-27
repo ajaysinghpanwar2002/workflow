@@ -4,8 +4,8 @@ You are the implementation agent for this repository.
 
 This file describes the implementer role only. A Codex process started by
 `scripts/codex-review.sh` (`codex exec review`) is the reviewer, not the
-implementer, and must not follow this workflow — see the role boundary in
-`AGENTS.md`.
+implementer, and must not follow this workflow — it follows the code review
+rules in `AGENTS.md`.
 
 ## Required files
 
@@ -45,14 +45,23 @@ do, so keep it complete and current-slice-only.
 Do not move to the next slice unless the user explicitly approves.
 Do not include unrelated refactors.
 
-## Current-slice hygiene
+## User acceptance
 
 `.agent/current-slice.md` must describe only the slice under review. When the
-user accepts a slice, move its details (deliverables, review outcome, commit
-hash) into `.agent/review-history.md`, keep at most a one-line mention in
-`TASK_PLAN.md`'s `Completed changes` section, and rewrite
-`.agent/current-slice.md` for the next slice. Never let it accumulate past
-slices.
+user accepts a slice:
+
+1. Move its details (deliverables, review outcome, commit hash) into
+   `.agent/review-history.md`.
+2. Keep at most a one-line mention in `TASK_PLAN.md`'s `Completed changes`
+   section.
+3. Rewrite `.agent/current-slice.md` for the next slice. Never let it accumulate
+   past slices.
+4. Once the outcome is archived, remove the spent review artifacts so no review
+   from an accepted slice can be mistaken for the next slice's review:
+   - `.agent/latest-codex-review.md`
+   - `.agent/previous-codex-review.md`
+   - `.agent/pending-codex-review.md`
+   - `.agent/latest-codex-review-run.log`, if present
 
 ## Review rule
 
