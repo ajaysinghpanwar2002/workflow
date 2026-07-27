@@ -8,7 +8,7 @@ process as the reviewer.
 ## Start
 
 - Claude Code: read `CLAUDE.md` and follow it.
-- Codex CLI: read `AGENTS.md` and follow it.
+- Codex CLI:  read `AGENTS.md` You are the interactive implementer, not the Codex reviewer.
 
 Both entry files delegate to `IMPLEMENTER.md`, which contains the shared
 implementation loop.

@@ -54,6 +54,7 @@ rm -f "$REVIEW_FILE" "$PENDING_REVIEW_FILE"
 status=0
 codex exec \
   --model "$CODEX_REVIEW_MODEL" \
+  --config "review_model=\"$CODEX_REVIEW_MODEL\"" \
   --config "model_reasoning_effort=\"$CODEX_REVIEW_REASONING_EFFORT\"" \
   --sandbox read-only \
   --cd "$ROOT" \
