@@ -19,7 +19,7 @@ prefix_rule(
         "./scripts/codex-review.sh",
     ],
     not_match = [
-        "scripts/agent-status.sh",
+        "scripts/install-agent-workflow.sh",
     ],
 )
 

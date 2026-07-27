@@ -27,7 +27,7 @@ the workflow and run:
 ```
 
 The installer copies `CLAUDE.md`, `AGENTS.md`, `IMPLEMENTER.md`, `TASK_PLAN.md`,
-the two scripts, and `.codex/rules/agent-workflow.rules` into that codebase,
+`scripts/codex-review.sh`, and `.codex/rules/agent-workflow.rules` into that codebase,
 creates the `.agent/` working files, and adds all of it to the target repo's
 `.git/info/exclude`. It never overwrites a file that already exists.
 
@@ -75,5 +75,4 @@ cleanup to run once the user accepts a slice.
 - `TASK_PLAN.md`: durable task plan and status.
 - `scripts/codex-review.sh`: launches the separate read-only Codex reviewer in
   dedicated review mode.
-- `scripts/agent-status.sh`: optional status snapshot for the user or implementer.
 - `.codex/rules/agent-workflow.rules`: lets Codex-as-implementer run the review script outside its sandbox.
