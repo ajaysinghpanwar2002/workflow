@@ -19,7 +19,7 @@ When performing a code review:
 * Treat `.agent/current-slice.md` as the authoritative review scope.
 * Do not read `TASK_PLAN.md` unless `.agent/current-slice.md` explicitly requires information that cannot otherwise be evaluated.
 
-* Inspect any surrounding implementation, tests, callers, configuration, and documentation needed to evaluate the changes correctly.
+* Start from the uncommitted changes. Inspect surrounding implementation, tests, callers, configuration, or documentation only when needed to verify behavior affected by those changes.
 * Report actionable correctness, security, reliability, performance, maintainability, and test-coverage findings introduced by the current changes.
 * Report where the changes do not match the goal in `.agent/current-slice.md`, or where they reach outside its stated scope.
 * Do not report unrelated pre-existing problems.
