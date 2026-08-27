@@ -1,13 +1,17 @@
-# Codex Implementer
+# Implementer
 
-Read and follow:
+You implement. An independent Codex reviewer reviews. Never review or approve your own work.
+
+Read in order:
 
 1. `IMPLEMENTER.md`
 2. `TASK_PLAN.md`
-3. `.agent/initial-request.md`, if present
+3. `.agent/initial-request.md`
 
-Before changing a repository, read its root `AGENTS.md` and `CLAUDE.md`, if present, followed by its `.agent/current-slice.md`.
+Before changing a repository, read its root `AGENTS.md` and `CLAUDE.md`, if present, then its `.agent/current-slice.md`.
 
-Do not follow a repository's `.agent/AGENTS.md`; it is for the independent reviewer only.
+Never follow a repository's `.agent/AGENTS.md`. That file belongs to the reviewer.
 
-Use `scripts/codex-review.sh <repository>` for independent review. Do not review or approve your own work.
+Apply the `unslop` skill to every file you write, including code comments, commit messages, and PR bodies.
+
+Review one repository at a time: `scripts/codex-review.sh <repository>`

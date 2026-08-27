@@ -6,14 +6,11 @@ prefix_rule(
     decision = "allow",
     justification = "Launches the separate read-only Codex reviewer; nested Codex needs network access",
     match = [
-        "scripts/codex-review.sh",
-        "./scripts/codex-review.sh",
         "scripts/codex-review.sh service-a",
         "./scripts/codex-review.sh service-a",
     ],
     not_match = [
-        "scripts/install-agent-workflow.sh",
-        "scripts/install-workspace-workflow.sh",
+        "scripts/install.sh",
     ],
 )
 
@@ -22,8 +19,6 @@ prefix_rule(
     decision = "allow",
     justification = "Launches the separate read-only Codex reviewer via Bash; nested Codex needs network access",
     match = [
-        "bash scripts/codex-review.sh",
-        "bash ./scripts/codex-review.sh",
         "bash scripts/codex-review.sh service-a",
         "bash ./scripts/codex-review.sh service-a",
     ],

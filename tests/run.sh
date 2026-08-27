@@ -41,8 +41,7 @@ if [ "${WORKFLOW_FAKE_CODEX:-}" = "1" ]; then
 fi
 
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
-WORKSPACE_INSTALLER="$SOURCE_ROOT/scripts/install-workspace-workflow.sh"
-DIRECT_INSTALLER="$SOURCE_ROOT/scripts/install-agent-workflow.sh"
+INSTALLER="$SOURCE_ROOT/scripts/install.sh"
 
 test_root_created="$(mktemp -d "${TMPDIR:-/tmp}/workflow-tests.XXXXXX")"
 TEST_ROOT="$(cd "$test_root_created" && pwd -P)"
@@ -86,6 +85,13 @@ assert_eq() {
   }
 }
 
+assert_same_file() {
+  cmp -s "$1" "$2" || {
+    echo "Expected identical files: $1 and $2" >&2
+    exit 1
+  }
+}
+
 init_repo() {
   local repository="$1"
   mkdir -p "$repository"
@@ -97,12 +103,26 @@ init_repo() {
   git -C "$repository" commit -qm base
 }
 
-run_workspace_installer() {
-  (cd "$1" && "$WORKSPACE_INSTALLER")
+install_into() {
+  local workspace="$1"
+  shift
+  (cd "$workspace" && "$INSTALLER" "$@") </dev/null
 }
 
-run_direct_installer() {
-  (cd "$1" && "$DIRECT_INSTALLER")
+install_with_answers() {
+  local workspace="$1"
+  local answers="$2"
+  printf '%s' "$answers" | (cd "$workspace" && "$INSTALLER")
+}
+
+new_workspace() {
+  local workspace="$1"
+  shift
+  mkdir -p "$workspace"
+  local repository
+  for repository in "$@"; do
+    init_repo "$workspace/$repository"
+  done
 }
 
 exclude_file() {
@@ -122,12 +142,10 @@ make_fake_path() {
   printf '%s\n' "$directory/bin"
 }
 
-prepare_workspace_review() {
+prepare_review_workspace() {
   local directory="$1"
-  mkdir -p "$directory/workspace"
-  init_repo "$directory/workspace/service-a"
-  init_repo "$directory/workspace/service-b"
-  run_workspace_installer "$directory/workspace" >/dev/null
+  new_workspace "$directory/workspace" service-a service-b
+  install_into "$directory/workspace" >/dev/null
   printf '# Slice\n\nGoal: Review change\n\nScope: service-a\n\nOut: service-b\n\nTests: true\n\nContract:\n' >"$directory/workspace/service-a/.agent/current-slice.md"
   printf 'change\n' >"$directory/workspace/service-a/change.txt"
 }
@@ -162,27 +180,37 @@ test_source_template_isolation() {
   assert_file "$SOURCE_ROOT/templates/workspace/AGENTS.md.tmpl"
   assert_file "$SOURCE_ROOT/templates/workspace/CLAUDE.md.tmpl"
   assert_file "$SOURCE_ROOT/templates/repository/AGENTS.md.tmpl"
+  assert_file "$SOURCE_ROOT/templates/skills/unslop/SKILL.md"
   assert_not_exists "$SOURCE_ROOT/templates/workspace/AGENTS.md"
   assert_not_exists "$SOURCE_ROOT/templates/workspace/CLAUDE.md"
   assert_contains "$SOURCE_ROOT/AGENTS.md" '# Workflow Repository Development'
-  assert_not_contains "$SOURCE_ROOT/AGENTS.md" '# Codex Reviewer'
-  assert_contains "$SOURCE_ROOT/CLAUDE.md" '# Workflow Repository Development'
-  assert_not_contains "$SOURCE_ROOT/CLAUDE.md" '# Claude Implementer'
+  assert_not_contains "$SOURCE_ROOT/AGENTS.md" '# Reviewer'
+  assert_eq "$(cat "$SOURCE_ROOT/CLAUDE.md")" '@AGENTS.md'
   assert_contains "$SOURCE_ROOT/AGENTS.md" 'Do not install or execute the generated workflow'
-  assert_contains "$SOURCE_ROOT/CLAUDE.md" 'Do not start the generated review loop'
   assert_not_exists "$SOURCE_ROOT/.codex/rules/agent-workflow.rules"
   assert_not_exists "$SOURCE_ROOT/IMPLEMENTER.md"
   assert_not_exists "$SOURCE_ROOT/TASK_PLAN.md"
+  # Skills must not be discoverable inside this source repository.
+  assert_not_exists "$SOURCE_ROOT/.claude/skills"
+  assert_not_exists "$SOURCE_ROOT/.codex/skills"
+  assert_not_exists "$SOURCE_ROOT/.agents/skills"
 }
 
-test_workspace_one_and_two_repositories() {
-  local directory="$TEST_ROOT/workspace-counts"
-  mkdir -p "$directory/one" "$directory/two/not-a-repository"
-  init_repo "$directory/one/service-a"
-  init_repo "$directory/two/service-a"
-  init_repo "$directory/two/service-b"
-  run_workspace_installer "$directory/one" >"$directory/one-output"
-  run_workspace_installer "$directory/two" >"$directory/two-output"
+test_single_installer_is_the_only_installer() {
+  assert_file "$INSTALLER"
+  assert_not_exists "$SOURCE_ROOT/scripts/install-agent-workflow.sh"
+  assert_not_exists "$SOURCE_ROOT/scripts/install-workspace-workflow.sh"
+  assert_not_contains "$SOURCE_ROOT/README.md" 'install-agent-workflow.sh'
+  assert_not_contains "$SOURCE_ROOT/templates/workspace/IMPLEMENTER.md.tmpl" 'Direct-repository'
+}
+
+test_one_and_two_repositories() {
+  local directory="$TEST_ROOT/repository-counts"
+  new_workspace "$directory/one" service-a
+  new_workspace "$directory/two" service-a service-b
+  mkdir -p "$directory/two/not-a-repository"
+  install_into "$directory/one" >"$directory/one-output"
+  install_into "$directory/two" >"$directory/two-output"
   assert_file "$directory/one/AGENTS.md"
   assert_file "$directory/one/service-a/.agent/AGENTS.md"
   assert_file "$directory/two/service-a/.agent/AGENTS.md"
@@ -190,79 +218,174 @@ test_workspace_one_and_two_repositories() {
   assert_not_exists "$directory/two/not-a-repository/.agent"
   assert_contains "$directory/two-output" '- service-a'
   assert_contains "$directory/two-output" '- service-b'
+  assert_eq "$(cat "$directory/one/CLAUDE.md")" '@AGENTS.md'
 }
 
-test_workspace_rejects_invalid_roots() {
-  local directory="$TEST_ROOT/workspace-invalid"
+test_rejects_invalid_roots() {
+  local directory="$TEST_ROOT/invalid-roots"
   mkdir -p "$directory/empty"
-  if run_workspace_installer "$directory/empty" >"$directory/empty.log" 2>&1; then return 1; fi
+  if install_into "$directory/empty" >"$directory/empty.log" 2>&1; then return 1; fi
   assert_not_exists "$directory/empty/AGENTS.md"
 
   mkdir -p "$directory/git-workspace"
   init_repo "$directory/git-workspace"
   init_repo "$directory/git-workspace/service-a"
-  if run_workspace_installer "$directory/git-workspace" >"$directory/git.log" 2>&1; then return 1; fi
+  if install_into "$directory/git-workspace" >"$directory/git.log" 2>&1; then return 1; fi
 
   init_repo "$directory/parent"
   mkdir -p "$directory/parent/work-item"
   init_repo "$directory/parent/work-item/service-a"
-  if run_workspace_installer "$directory/parent/work-item" >"$directory/parent.log" 2>&1; then return 1; fi
+  if install_into "$directory/parent/work-item" >"$directory/parent.log" 2>&1; then return 1; fi
   assert_not_exists "$directory/parent/work-item/AGENTS.md"
+
+  new_workspace "$directory/bad-argument" service-a
+  if install_into "$directory/bad-argument" --nope >"$directory/argument.log" 2>&1; then return 1; fi
+  assert_not_exists "$directory/bad-argument/AGENTS.md"
 }
 
-test_workspace_worktrees_and_spaces() {
+test_worktrees_and_spaces() {
   local directory="$TEST_ROOT/worktrees and spaces"
   mkdir -p "$directory/workspace with spaces"
   init_repo "$directory/source repository"
   git -C "$directory/source repository" worktree add -q -b ticket "$directory/workspace with spaces/service worktree"
-  run_workspace_installer "$directory/workspace with spaces" >/dev/null
+  install_into "$directory/workspace with spaces" >/dev/null
   assert_file "$directory/workspace with spaces/service worktree/.agent/AGENTS.md"
   assert_contains "$(exclude_file "$directory/workspace with spaces/service worktree")" '.agent/'
 }
 
-test_workspace_idempotency_and_mutable_preservation() {
-  local directory="$TEST_ROOT/workspace-idempotent"
-  mkdir -p "$directory/workspace"
-  init_repo "$directory/workspace/service-a"
-  run_workspace_installer "$directory/workspace" >/dev/null
+test_installs_skills_for_both_agents() {
+  local directory="$TEST_ROOT/skills"
+  new_workspace "$directory/workspace" service-a
+  install_into "$directory/workspace" >/dev/null
+  local template="$SOURCE_ROOT/templates/skills/unslop/SKILL.md"
+  assert_same_file "$template" "$directory/workspace/.claude/skills/unslop/SKILL.md"
+  assert_same_file "$template" "$directory/workspace/.codex/skills/unslop/SKILL.md"
+  assert_contains "$directory/workspace/.claude/skills/unslop/SKILL.md" 'name: unslop'
+  # Skills belong to the workspace, not to the reviewed repositories.
+  assert_not_exists "$directory/workspace/service-a/.claude"
+  assert_not_exists "$directory/workspace/service-a/.codex"
+}
+
+test_idempotent_and_preserves_task_state() {
+  local directory="$TEST_ROOT/idempotent"
+  new_workspace "$directory/workspace" service-a
+  install_into "$directory/workspace" >/dev/null
   printf 'custom plan\n' >"$directory/workspace/TASK_PLAN.md"
   printf 'custom request\n' >"$directory/workspace/.agent/initial-request.md"
   printf 'custom history\n' >"$directory/workspace/.agent/review-history.md"
   printf 'custom slice\n' >"$directory/workspace/service-a/.agent/current-slice.md"
   printf '1\n' >"$directory/workspace/service-a/.agent/review-attempts"
-  run_workspace_installer "$directory/workspace" >/dev/null
+  install_into "$directory/workspace" >"$directory/second.log"
   assert_eq "$(sed -n '1p' "$directory/workspace/TASK_PLAN.md")" 'custom plan'
   assert_eq "$(sed -n '1p' "$directory/workspace/.agent/initial-request.md")" 'custom request'
   assert_eq "$(sed -n '1p' "$directory/workspace/.agent/review-history.md")" 'custom history'
   assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/current-slice.md")" 'custom slice'
   assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/review-attempts")" '1'
   assert_eq "$(grep -xcF '.agent/' "$(exclude_file "$directory/workspace/service-a")")" '1'
+  assert_contains "$directory/second.log" '0 created, 0 updated'
 }
 
-test_workspace_static_conflicts_are_atomic() {
-  local directory="$TEST_ROOT/workspace-collision"
-  mkdir -p "$directory/workspace"
-  init_repo "$directory/workspace/service-a"
-  mkdir -p "$directory/workspace/service-a/.agent"
-  printf 'conflict\n' >"$directory/workspace/service-a/.agent/AGENTS.md"
-  if run_workspace_installer "$directory/workspace" >"$directory/output" 2>&1; then return 1; fi
+test_update_keeps_changed_files_without_an_answer() {
+  local directory="$TEST_ROOT/update-default"
+  new_workspace "$directory/workspace" service-a
+  install_into "$directory/workspace" >/dev/null
+  printf 'local edit\n' >"$directory/workspace/IMPLEMENTER.md"
+  install_into "$directory/workspace" >"$directory/output" 2>&1 || return 1
+  assert_eq "$(cat "$directory/workspace/IMPLEMENTER.md")" 'local edit'
+  assert_contains "$directory/output" 'differs from the workflow version.'
+  assert_contains "$directory/output" '1 kept'
+  assert_contains "$directory/output" '- IMPLEMENTER.md'
+}
+
+test_update_shows_diff_then_overwrites_one_file() {
+  local directory="$TEST_ROOT/update-diff"
+  new_workspace "$directory/workspace" service-a
+  install_into "$directory/workspace" >/dev/null
+  printf 'local edit\n' >"$directory/workspace/AGENTS.md"
+  printf 'local edit\n' >"$directory/workspace/IMPLEMENTER.md"
+  install_with_answers "$directory/workspace" 'd
+o
+' >"$directory/output" 2>&1 || return 1
+  assert_contains "$directory/output" '-local edit'
+  assert_same_file "$SOURCE_ROOT/templates/workspace/AGENTS.md.tmpl" "$directory/workspace/AGENTS.md"
+  # The prompt is per file, so the second conflict falls back to the keep default.
+  assert_eq "$(cat "$directory/workspace/IMPLEMENTER.md")" 'local edit'
+  assert_contains "$directory/output" '1 updated'
+}
+
+test_update_answers_apply_to_all_remaining_files() {
+  local directory="$TEST_ROOT/update-all"
+  new_workspace "$directory/overwrite" service-a
+  install_into "$directory/overwrite" >/dev/null
+  printf 'local edit\n' >"$directory/overwrite/AGENTS.md"
+  printf 'local edit\n' >"$directory/overwrite/IMPLEMENTER.md"
+  printf 'local edit\n' >"$directory/overwrite/service-a/.agent/AGENTS.md"
+  install_with_answers "$directory/overwrite" 'a
+' >"$directory/overwrite.log" 2>&1 || return 1
+  assert_same_file "$SOURCE_ROOT/templates/workspace/AGENTS.md.tmpl" "$directory/overwrite/AGENTS.md"
+  assert_same_file "$SOURCE_ROOT/templates/workspace/IMPLEMENTER.md.tmpl" "$directory/overwrite/IMPLEMENTER.md"
+  assert_same_file "$SOURCE_ROOT/templates/repository/AGENTS.md.tmpl" "$directory/overwrite/service-a/.agent/AGENTS.md"
+  assert_contains "$directory/overwrite.log" '3 updated'
+
+  new_workspace "$directory/keep" service-a
+  install_into "$directory/keep" >/dev/null
+  printf 'local edit\n' >"$directory/keep/AGENTS.md"
+  printf 'local edit\n' >"$directory/keep/IMPLEMENTER.md"
+  install_with_answers "$directory/keep" 's
+' >"$directory/keep.log" 2>&1 || return 1
+  assert_eq "$(cat "$directory/keep/AGENTS.md")" 'local edit'
+  assert_eq "$(cat "$directory/keep/IMPLEMENTER.md")" 'local edit'
+  assert_contains "$directory/keep.log" '2 kept'
+}
+
+test_update_flags_skip_the_prompt() {
+  local directory="$TEST_ROOT/update-flags"
+  new_workspace "$directory/workspace" service-a
+  install_into "$directory/workspace" >/dev/null
+  printf 'local edit\n' >"$directory/workspace/AGENTS.md"
+  install_into "$directory/workspace" --keep-all >"$directory/keep.log" 2>&1
+  assert_eq "$(cat "$directory/workspace/AGENTS.md")" 'local edit'
+  assert_not_contains "$directory/keep.log" 'differs from the workflow version.'
+  install_into "$directory/workspace" --overwrite-all >"$directory/overwrite.log" 2>&1
+  assert_same_file "$SOURCE_ROOT/templates/workspace/AGENTS.md.tmpl" "$directory/workspace/AGENTS.md"
+  assert_not_contains "$directory/overwrite.log" 'differs from the workflow version.'
+}
+
+test_update_abort_writes_nothing() {
+  local directory="$TEST_ROOT/update-abort"
+  new_workspace "$directory/workspace" service-a
+  install_into "$directory/workspace" >/dev/null
+  printf 'local edit\n' >"$directory/workspace/AGENTS.md"
+  printf 'local edit\n' >"$directory/workspace/IMPLEMENTER.md"
+  rm "$directory/workspace/TASK_PLAN.md"
+  if install_with_answers "$directory/workspace" 'q
+' >"$directory/output" 2>&1; then return 1; fi
+  assert_contains "$directory/output" 'Aborted. Nothing was written.'
+  assert_eq "$(cat "$directory/workspace/AGENTS.md")" 'local edit'
+  assert_eq "$(cat "$directory/workspace/IMPLEMENTER.md")" 'local edit'
+  assert_not_exists "$directory/workspace/TASK_PLAN.md"
+}
+
+test_refuses_non_regular_managed_paths() {
+  local directory="$TEST_ROOT/non-regular"
+  new_workspace "$directory/workspace" service-a
+  mkdir -p "$directory/workspace/service-a/.agent/AGENTS.md"
+  if install_into "$directory/workspace" >"$directory/output" 2>&1; then return 1; fi
+  assert_contains "$directory/output" 'Refusing to replace a symlink or non-regular file'
   assert_not_exists "$directory/workspace/AGENTS.md"
   assert_not_exists "$directory/workspace/TASK_PLAN.md"
-  assert_not_exists "$directory/workspace/service-a/.agent/current-slice.md"
 }
 
-test_workspace_preserves_project_instructions_and_excludes() {
-  local directory="$TEST_ROOT/workspace-project-files"
-  mkdir -p "$directory/workspace"
-  init_repo "$directory/workspace/service-a"
-  init_repo "$directory/workspace/service-b"
+test_preserves_project_instructions_and_excludes() {
+  local directory="$TEST_ROOT/project-files"
+  new_workspace "$directory/workspace" service-a service-b
   printf 'project agents\n' >"$directory/workspace/service-a/AGENTS.md"
   printf 'project claude\n' >"$directory/workspace/service-a/CLAUDE.md"
   cp "$directory/workspace/service-a/AGENTS.md" "$directory/agents.before"
   cp "$directory/workspace/service-a/CLAUDE.md" "$directory/claude.before"
-  run_workspace_installer "$directory/workspace" >/dev/null
-  cmp -s "$directory/agents.before" "$directory/workspace/service-a/AGENTS.md"
-  cmp -s "$directory/claude.before" "$directory/workspace/service-a/CLAUDE.md"
+  install_into "$directory/workspace" >/dev/null
+  assert_same_file "$directory/agents.before" "$directory/workspace/service-a/AGENTS.md"
+  assert_same_file "$directory/claude.before" "$directory/workspace/service-a/CLAUDE.md"
   assert_not_exists "$directory/workspace/service-b/AGENTS.md"
   assert_not_exists "$directory/workspace/service-b/CLAUDE.md"
   assert_file "$directory/workspace/service-a/.agent/AGENTS.md"
@@ -273,7 +396,7 @@ test_workspace_preserves_project_instructions_and_excludes() {
   assert_not_contains "$excludes" 'CLAUDE.md'
 }
 
-test_workspace_skips_source_repository_child() {
+test_skips_source_repository_child() {
   local directory="$TEST_ROOT/source-child"
   local workspace="$directory/workspace"
   mkdir -p "$workspace/workflow-source"
@@ -283,64 +406,17 @@ test_workspace_skips_source_repository_child() {
   git -C "$workspace/workflow-source" add templates scripts
   git -C "$workspace/workflow-source" commit -qm source
   init_repo "$workspace/service-a"
-  (cd "$workspace" && "$workspace/workflow-source/scripts/install-workspace-workflow.sh") >/dev/null
+  (cd "$workspace" && "$workspace/workflow-source/scripts/install.sh") </dev/null >/dev/null
   assert_not_exists "$workspace/workflow-source/.agent"
   assert_file "$workspace/service-a/.agent/AGENTS.md"
 }
 
-test_direct_installer_roots_and_worktree() {
-  local directory="$TEST_ROOT/direct-roots"
-  init_repo "$directory/repository"
-  run_direct_installer "$directory/repository" >/dev/null
-  assert_file "$directory/repository/.agent/AGENTS.md"
-  mkdir -p "$directory/repository/subdirectory"
-  if run_direct_installer "$directory/repository/subdirectory" >"$directory/sub.log" 2>&1; then return 1; fi
-  mkdir -p "$directory/not-git"
-  if run_direct_installer "$directory/not-git" >"$directory/no.log" 2>&1; then return 1; fi
-
-  init_repo "$directory/source"
-  git -C "$directory/source" worktree add -q -b direct-worktree "$directory/worktree"
-  run_direct_installer "$directory/worktree" >/dev/null
-  assert_file "$directory/worktree/.agent/AGENTS.md"
-}
-
-test_direct_preserves_mutable_state_and_excludes() {
-  local directory="$TEST_ROOT/direct-idempotent"
-  init_repo "$directory/repository"
-  run_direct_installer "$directory/repository" >/dev/null
-  printf 'custom plan\n' >"$directory/repository/TASK_PLAN.md"
-  printf 'custom slice\n' >"$directory/repository/.agent/current-slice.md"
-  printf '2\n' >"$directory/repository/.agent/review-attempts"
-  run_direct_installer "$directory/repository" >/dev/null
-  assert_eq "$(sed -n '1p' "$directory/repository/TASK_PLAN.md")" 'custom plan'
-  assert_eq "$(sed -n '1p' "$directory/repository/.agent/current-slice.md")" 'custom slice'
-  assert_eq "$(sed -n '1p' "$directory/repository/.agent/review-attempts")" '2'
-  local excludes
-  excludes="$(exclude_file "$directory/repository")"
-  assert_eq "$(grep -xcF '.agent/' "$excludes")" '1'
-  assert_eq "$(grep -xcF 'AGENTS.md' "$excludes")" '1'
-}
-
-test_direct_rejects_project_instructions() {
-  local directory="$TEST_ROOT/direct-project-files"
-  init_repo "$directory/agents"
-  printf 'project owned\n' >"$directory/agents/AGENTS.md"
-  if run_direct_installer "$directory/agents" >"$directory/agents.log" 2>&1; then return 1; fi
-  assert_contains "$directory/agents.log" 'Use install-workspace-workflow.sh from a parent workspace instead.'
-  assert_not_exists "$directory/agents/.agent"
-
-  init_repo "$directory/claude"
-  printf 'project owned\n' >"$directory/claude/CLAUDE.md"
-  if run_direct_installer "$directory/claude" >"$directory/claude.log" 2>&1; then return 1; fi
-  assert_contains "$directory/claude.log" 'Use install-workspace-workflow.sh from a parent workspace instead.'
-  assert_not_exists "$directory/claude/.agent"
-}
-
-test_review_mode_argument_validation() {
+test_review_argument_validation() {
   local directory="$TEST_ROOT/review-arguments"
-  prepare_workspace_review "$directory"
+  prepare_review_workspace "$directory"
   local script="$directory/workspace/scripts/codex-review.sh"
   if "$script" >"$directory/no-arg.log" 2>&1; then return 1; fi
+  assert_contains "$directory/no-arg.log" 'Usage: codex-review.sh <repository>'
   if "$script" service-a service-b >"$directory/many.log" 2>&1; then return 1; fi
   if "$script" 'service-a/nested' >"$directory/nested.log" 2>&1; then return 1; fi
   if "$script" '..' >"$directory/dotdot.log" 2>&1; then return 1; fi
@@ -348,25 +424,21 @@ test_review_mode_argument_validation() {
   mkdir -p "$directory/workspace/not-git"
   if "$script" not-git >"$directory/not-git.log" 2>&1; then return 1; fi
   assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/review-attempts")" '0'
-
-  local direct="$directory/direct"
-  init_repo "$direct"
-  run_direct_installer "$direct" >/dev/null
-  printf '# Slice\nGoal: direct\n' >"$direct/.agent/current-slice.md"
-  printf 'change\n' >"$direct/change.txt"
-  if "$direct/scripts/codex-review.sh" extra >"$directory/direct-arg.log" 2>&1; then return 1; fi
-  local fake_bin
-  fake_bin="$(make_fake_path "$directory/fake-direct")"
-  run_fake_review "$directory/fake-direct" "$direct/scripts/codex-review.sh" >/dev/null
-  assert_eq "$(sed -n '1p' "$directory/fake-direct/records/review-cwd")" "$direct/.agent"
 }
 
-test_workspace_review_targets_only_selected_repository() {
+test_review_rejects_a_git_workspace() {
+  local directory="$TEST_ROOT/review-git-workspace"
+  prepare_review_workspace "$directory"
+  git -C "$directory/workspace" init -q
+  if "$directory/workspace/scripts/codex-review.sh" service-a >"$directory/output" 2>&1; then return 1; fi
+  assert_contains "$directory/output" 'The workspace root must not be a Git repository or inside one'
+}
+
+test_review_targets_only_the_selected_repository() {
   local directory="$TEST_ROOT/review-target"
-  prepare_workspace_review "$directory"
+  prepare_review_workspace "$directory"
   printf 'sibling change\n' >"$directory/workspace/service-b/sibling.txt"
-  local fake_bin
-  fake_bin="$(make_fake_path "$directory/fake")"
+  make_fake_path "$directory/fake" >/dev/null
   run_fake_review "$directory/fake" "$directory/workspace/scripts/codex-review.sh" service-a >/dev/null
   assert_eq "$(sed -n '1p' "$directory/fake/records/review-cwd")" "$directory/workspace/service-a/.agent"
   assert_eq "$(sed -n '1p' "$directory/fake/records/git-root")" "$directory/workspace/service-a"
@@ -381,7 +453,7 @@ test_workspace_review_targets_only_selected_repository() {
 
 test_review_attempt_limit() {
   local directory="$TEST_ROOT/review-limit"
-  prepare_workspace_review "$directory"
+  prepare_review_workspace "$directory"
   rm "$directory/workspace/service-a/.agent/review-attempts"
   make_fake_path "$directory/fake" >/dev/null
   local script="$directory/workspace/scripts/codex-review.sh"
@@ -397,7 +469,7 @@ test_review_attempt_limit() {
 
 test_review_validation_does_not_increment() {
   local directory="$TEST_ROOT/review-validation"
-  prepare_workspace_review "$directory"
+  prepare_review_workspace "$directory"
   cp "$SOURCE_ROOT/templates/repository/current-slice.md.tmpl" "$directory/workspace/service-a/.agent/current-slice.md"
   make_fake_path "$directory/fake" >/dev/null
   if run_fake_review "$directory/fake" "$directory/workspace/scripts/codex-review.sh" service-a >"$directory/output" 2>&1; then return 1; fi
@@ -413,7 +485,7 @@ test_review_validation_does_not_increment() {
 
 test_failed_and_empty_reviews_consume_attempts() {
   local directory="$TEST_ROOT/review-failures"
-  prepare_workspace_review "$directory/nonzero"
+  prepare_review_workspace "$directory/nonzero"
   make_fake_path "$directory/nonzero/fake" >/dev/null
   TEST_CODEX_EXIT=7
   if run_fake_review "$directory/nonzero/fake" "$directory/nonzero/workspace/scripts/codex-review.sh" service-a >"$directory/nonzero/output" 2>&1; then return 1; fi
@@ -422,7 +494,7 @@ test_failed_and_empty_reviews_consume_attempts() {
   assert_not_exists "$directory/nonzero/workspace/service-a/.agent/latest-codex-review.md"
   assert_file "$directory/nonzero/workspace/service-a/.agent/latest-codex-review-run.log"
 
-  prepare_workspace_review "$directory/empty"
+  prepare_review_workspace "$directory/empty"
   printf 'stale clean review\n' >"$directory/empty/workspace/service-a/.agent/latest-codex-review.md"
   make_fake_path "$directory/empty/fake" >/dev/null
   TEST_CODEX_OUTPUT=''
@@ -435,7 +507,7 @@ test_failed_and_empty_reviews_consume_attempts() {
 
 test_review_artifact_rotation_and_success() {
   local directory="$TEST_ROOT/review-artifacts"
-  prepare_workspace_review "$directory"
+  prepare_review_workspace "$directory"
   printf 'old clean review\n' >"$directory/workspace/service-a/.agent/latest-codex-review.md"
   printf 'stale pending\n' >"$directory/workspace/service-a/.agent/pending-codex-review.md"
   make_fake_path "$directory/fake" >/dev/null
@@ -448,43 +520,45 @@ test_review_artifact_rotation_and_success() {
 }
 
 test_templates_capture_required_policy() {
-  local codex="$SOURCE_ROOT/templates/workspace/AGENTS.md.tmpl"
-  local claude="$SOURCE_ROOT/templates/workspace/CLAUDE.md.tmpl"
+  local entry="$SOURCE_ROOT/templates/workspace/AGENTS.md.tmpl"
   local reviewer="$SOURCE_ROOT/templates/repository/AGENTS.md.tmpl"
   local implementer="$SOURCE_ROOT/templates/workspace/IMPLEMENTER.md.tmpl"
-  assert_contains "$codex" '# Codex Implementer'
-  assert_contains "$claude" '# Claude Implementer'
-  assert_contains "$codex" 'root `AGENTS.md` and `CLAUDE.md`'
-  assert_contains "$claude" 'root `AGENTS.md` and `CLAUDE.md`'
-  assert_contains "$codex" '.agent/AGENTS.md`; it is for the independent reviewer only'
-  assert_contains "$claude" '.agent/AGENTS.md`; it is for the independent reviewer only'
+  assert_eq "$(cat "$SOURCE_ROOT/templates/workspace/CLAUDE.md.tmpl")" '@AGENTS.md'
+  assert_contains "$entry" 'root `AGENTS.md` and `CLAUDE.md`'
+  assert_contains "$entry" "Never follow a repository's \`.agent/AGENTS.md\`"
+  assert_contains "$entry" 'unslop'
   assert_contains "$reviewer" '- edit files'
   assert_contains "$reviewer" '- run mutating commands'
-  assert_contains "$implementer" 'at most two Codex review attempts per slice'
-  assert_contains "$implementer" 'Caveman in Lite mode'
-  assert_contains "$implementer" 'Ponytail'
-  assert_contains "$implementer" 'Use the fewest words'
-  assert_contains "$implementer" 'WORKSPACE_ROOT="$(pwd -P)"'
+  assert_contains "$implementer" 'Two review attempts per repository per slice. Never a third.'
+  assert_contains "$implementer" 'unslop'
+  assert_not_contains "$implementer" 'Caveman'
+  assert_not_contains "$implementer" 'Ponytail'
+  assert_contains "$implementer" 'WORK_ITEM="$(basename "$(pwd -P)")"'
   assert_contains "$implementer" '--base staging'
   assert_contains "$implementer" '--title "$WORK_ITEM"'
   assert_contains "$implementer" 'promotion PRs from `staging` to `release`'
   assert_contains "$implementer" 'without explicit user approval'
-  assert_contains "$implementer" 'The overall slice is clean only when every changed repository has a clean latest review.'
+  assert_contains "$implementer" 'The slice is clean only when every changed repository has a clean latest review.'
 }
 
-run_test 'source templates are isolated from active instructions' test_source_template_isolation
-run_test 'workspace installer handles one and two repositories' test_workspace_one_and_two_repositories
-run_test 'workspace installer rejects invalid roots' test_workspace_rejects_invalid_roots
-run_test 'workspace installer supports worktrees and spaces' test_workspace_worktrees_and_spaces
-run_test 'workspace installation is idempotent and preserves mutable state' test_workspace_idempotency_and_mutable_preservation
-run_test 'workspace static conflicts fail before mutation' test_workspace_static_conflicts_are_atomic
-run_test 'workspace preserves project instructions and excludes only .agent' test_workspace_preserves_project_instructions_and_excludes
-run_test 'workspace installer skips its own source repository child' test_workspace_skips_source_repository_child
-run_test 'direct installer validates roots and supports worktrees' test_direct_installer_roots_and_worktree
-run_test 'direct installer preserves mutable state and excludes idempotently' test_direct_preserves_mutable_state_and_excludes
-run_test 'direct installer rejects project-owned instructions' test_direct_rejects_project_instructions
-run_test 'review modes validate argument counts and direct mode' test_review_mode_argument_validation
-run_test 'workspace review targets only the selected repository' test_workspace_review_targets_only_selected_repository
+run_test 'source templates stay inert in this repository' test_source_template_isolation
+run_test 'only one installer remains' test_single_installer_is_the_only_installer
+run_test 'installer handles one and two repositories' test_one_and_two_repositories
+run_test 'installer rejects invalid roots and arguments' test_rejects_invalid_roots
+run_test 'installer supports worktrees and spaces' test_worktrees_and_spaces
+run_test 'installer installs skills for Claude and Codex' test_installs_skills_for_both_agents
+run_test 'reinstall is idempotent and preserves task state' test_idempotent_and_preserves_task_state
+run_test 'update keeps changed files when no answer is given' test_update_keeps_changed_files_without_an_answer
+run_test 'update shows a diff then overwrites one file' test_update_shows_diff_then_overwrites_one_file
+run_test 'update answers can apply to all remaining files' test_update_answers_apply_to_all_remaining_files
+run_test 'update flags skip the prompt' test_update_flags_skip_the_prompt
+run_test 'update abort writes nothing' test_update_abort_writes_nothing
+run_test 'installer refuses non-regular managed paths' test_refuses_non_regular_managed_paths
+run_test 'installer preserves project instructions and excludes only .agent' test_preserves_project_instructions_and_excludes
+run_test 'installer skips its own source repository child' test_skips_source_repository_child
+run_test 'review validates its repository argument' test_review_argument_validation
+run_test 'review rejects a Git workspace root' test_review_rejects_a_git_workspace
+run_test 'review targets only the selected repository' test_review_targets_only_the_selected_repository
 run_test 'review attempts stop after two launches' test_review_attempt_limit
 run_test 'review validation failures do not consume attempts' test_review_validation_does_not_increment
 run_test 'failed and empty reviews consume attempts without approval' test_failed_and_empty_reviews_consume_attempts

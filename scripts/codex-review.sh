@@ -12,49 +12,41 @@ canonical_git_root() {
   (cd "$root" && pwd -P)
 }
 
-script_git_root="$(canonical_git_root "$SCRIPT_ROOT")" || script_git_root=""
+if git -C "$SCRIPT_ROOT" rev-parse --show-toplevel >/dev/null 2>&1; then
+  echo "The workspace root must not be a Git repository or inside one: $SCRIPT_ROOT" >&2
+  exit 1
+fi
 
-if [ -n "$script_git_root" ]; then
-  if [ "$script_git_root" != "$SCRIPT_ROOT" ]; then
-    echo "The installed script root is inside another Git repository: $SCRIPT_ROOT" >&2
-    exit 1
-  fi
-  if [ "$#" -ne 0 ]; then
-    echo "Direct-repository mode accepts no repository argument." >&2
-    exit 1
-  fi
-  REPO_ROOT="$SCRIPT_ROOT"
-else
-  if [ "$#" -ne 1 ]; then
-    echo "Workspace mode requires exactly one direct child repository argument." >&2
-    exit 1
-  fi
-  case "$1" in
-    ''|'.'|'..'|*/*)
-      echo "Repository must be the name of one direct child directory." >&2
-      exit 1
-      ;;
-  esac
+if [ "$#" -ne 1 ]; then
+  echo "Usage: codex-review.sh <repository>" >&2
+  echo "Pass the name of exactly one direct child repository." >&2
+  exit 1
+fi
 
-  candidate="$SCRIPT_ROOT/$1"
-  if [ ! -d "$candidate" ]; then
-    echo "Repository is not a direct child directory: $1" >&2
+case "$1" in
+  ''|'.'|'..'|*/*)
+    echo "Repository must be the name of one direct child directory: $1" >&2
     exit 1
-  fi
-  resolved_candidate="$(cd "$candidate" && pwd -P)"
-  if [ "$(dirname "$resolved_candidate")" != "$SCRIPT_ROOT" ]; then
-    echo "Repository resolves outside the workspace: $1" >&2
-    exit 1
-  fi
-  repository_git_root="$(canonical_git_root "$resolved_candidate")" || {
-    echo "Selected child is not a Git repository: $1" >&2
-    exit 1
-  }
-  if [ "$repository_git_root" != "$resolved_candidate" ]; then
-    echo "Selected child is not exactly a Git repository root: $1" >&2
-    exit 1
-  fi
-  REPO_ROOT="$resolved_candidate"
+    ;;
+esac
+
+candidate="$SCRIPT_ROOT/$1"
+if [ ! -d "$candidate" ]; then
+  echo "Repository is not a direct child directory: $1" >&2
+  exit 1
+fi
+REPO_ROOT="$(cd "$candidate" && pwd -P)"
+if [ "$(dirname "$REPO_ROOT")" != "$SCRIPT_ROOT" ]; then
+  echo "Repository resolves outside the workspace: $1" >&2
+  exit 1
+fi
+repository_git_root="$(canonical_git_root "$REPO_ROOT")" || {
+  echo "Selected child is not a Git repository: $1" >&2
+  exit 1
+}
+if [ "$repository_git_root" != "$REPO_ROOT" ]; then
+  echo "Selected child is not exactly a Git repository root: $1" >&2
+  exit 1
 fi
 
 REVIEW_CWD="$REPO_ROOT/.agent"

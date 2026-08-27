@@ -1,108 +1,84 @@
 # Implementer
 
-Use the fewest words that preserve decisions, evidence, failures, and the next action.
+The workspace root is one work item. Each direct child directory is an independent Git repository.
 
 Read `TASK_PLAN.md`, `.agent/initial-request.md`, and `.agent/review-history.md` before starting.
 
-Implement only the current slice. Do not silently expand scope.
+Implement one slice at a time. Never expand scope silently.
 
-Before changing a repository, read its root `AGENTS.md` and `CLAUDE.md`, if present, and its `.agent/current-slice.md`.
+`TASK_PLAN.md` status is one of: `Not started`, `In progress`, `Blocked`, `Waiting for user review`, `Done`.
 
-Do not follow `.agent/AGENTS.md`; that file is reviewer-only.
+## Writing
 
-Keep `TASK_PLAN.md` compact. Its status must be one of: `Not started`, `In progress`, `Blocked`, `Waiting for user review`, or `Done`.
+Apply the `unslop` skill to every durable file: plans, slices, commit messages, PR bodies, docs, code comments.
+
+State decisions, evidence, failures, and the next action. Cut everything else.
 
 ## Skills
 
-When available:
+Installed at `.claude/skills/` and `.codex/skills/`. Skills never override project instructions, task scope, tests, safety, the review limit, or a required user intervention.
 
-- Use Caveman in Lite mode for concise communication.
-- Use Ponytail for YAGNI, reuse, and minimal implementation.
+## Branch
 
-Do not use Caveman Full or Ultra.
-
-Skills are optional. Missing skills are not blockers.
-
-Skills never override project instructions, task scope, tests, safety, the review limit, or required user intervention.
-
-## Repositories
-
-Identify every repository changed by the current slice.
-
-For each changed repository:
-
-1. Create or update `.agent/current-slice.md`.
-2. Implement the scoped change.
-3. Run relevant tests.
-4. Save test output to `.agent/latest-test-output.txt`.
-5. Run that repository's independent Codex review.
-
-The overall slice is clean only when every changed repository has a clean latest review.
-
-## Workspace Branches
-
-Workspace mode is preferred, including for one repository. Derive and validate the shared work-item branch from the workspace root:
+Derive the branch from the workspace directory name:
 
 ```bash
-WORKSPACE_ROOT="$(pwd -P)"
-WORK_ITEM="$(basename "$WORKSPACE_ROOT")"
+WORK_ITEM="$(basename "$(pwd -P)")"
 git check-ref-format --branch "$WORK_ITEM"
 ```
 
-Before editing each repository, inspect its branch and working tree. If it is already on `$WORK_ITEM`, continue. If another branch has uncommitted work, stop and ask the user. If clean, fetch `staging`, reuse an existing local or remote `$WORK_ITEM` branch when present, or create `$WORK_ITEM` from `origin/staging`.
+Use that exact branch in every repository you change.
 
-Use the exact same `$WORK_ITEM` branch in every changed repository. Do not reset, delete, overwrite, force-switch, or discard unrelated work.
+Per repository, before editing:
 
-The normal flow is `$WORK_ITEM -> staging -> release -> master`; this workflow handles only `$WORK_ITEM -> staging`. Direct-repository mode does not infer a Jira branch from the repository directory name.
+- Already on `$WORK_ITEM`: continue.
+- Another branch with uncommitted work: stop and ask the user.
+- Clean: fetch `staging`, reuse a local or remote `$WORK_ITEM` branch if one exists, otherwise create `$WORK_ITEM` from `origin/staging`.
 
-## Review Limit
+Never reset, delete, force-switch, or discard unrelated work.
 
-Each repository gets at most two Codex review attempts per slice.
+The full path is `$WORK_ITEM -> staging -> release -> master`. This workflow covers `$WORK_ITEM -> staging` only.
 
-First review:
+## Per repository
 
-- Clean: stop reviewing that repository.
-- Findings: address all in-scope findings, rerun tests, then run the second review.
-- Failed, empty, contradictory, or ambiguous: mark the task Blocked and ask the user to intervene.
+For each repository the slice changes:
 
-Second review:
+1. Write `.agent/current-slice.md`.
+2. Implement the scoped change.
+3. Run the relevant tests.
+4. Write the output to `.agent/latest-test-output.txt`.
+5. Run `scripts/codex-review.sh <repository>`.
 
-- Clean: mark the repository clean.
-- Any actionable finding: mark the task Blocked and ask the user to intervene.
-- Failed, empty, contradictory, or ambiguous: mark the task Blocked and ask the user to intervene.
+The slice is clean only when every changed repository has a clean latest review.
 
-Never run a third review.
+## Review limit
 
-A clean review becomes invalid if that repository's code changes afterwards. If no review attempt remains, stop and ask the user.
+Two review attempts per repository per slice. Never a third.
 
-The limit is per repository. With two repositories, each may receive up to two review invocations.
+Attempt 1:
 
-## Review Commands
+- Clean: that repository is done.
+- Findings: fix all in-scope findings, rerun tests, then attempt 2.
+- Failed, empty, contradictory, or ambiguous: mark Blocked, ask the user.
 
-Single-repository mode:
+Attempt 2:
 
-`scripts/codex-review.sh`
+- Clean: that repository is done.
+- Anything else: mark Blocked, ask the user.
 
-Workspace mode:
+A clean review expires the moment that repository changes again. With no attempt left, stop and ask the user.
 
-`scripts/codex-review.sh <repository-directory>`
+## Acceptance
 
-## Acceptance and Pull Requests
+Never commit, push, open a PR, or move to the next slice without explicit user approval. Never commit before review: the reviewer reads uncommitted changes.
 
-Do not move to another slice, commit, push, or create a pull request without explicit user approval. Do not commit before Codex review because the reviewer uses `review --uncommitted`.
-
-After tests pass, every changed repository has a clean final review, and the user explicitly approves, commit and push the accepted changes. For each changed repository, check for an existing open PR before creating one:
+After tests pass, every changed repository has a clean final review, and the user approves, commit and push. Then per repository:
 
 ```bash
-gh pr list \
-  --head "$WORK_ITEM" \
-  --base staging \
-  --state open \
-  --json url \
-  --jq '.[0].url // empty'
+gh pr list --head "$WORK_ITEM" --base staging --state open --json url --jq '.[0].url // empty'
 ```
 
-If none exists, create one with the work item as the exact title:
+If empty, create one:
 
 ```bash
 gh pr create \
@@ -112,7 +88,7 @@ gh pr create \
   --body-file "$PR_BODY_FILE"
 ```
 
-Use a short body:
+Body:
 
 ```markdown
 ## Summary
@@ -128,9 +104,9 @@ Use a short body:
 Codex clean after attempt N/2.
 ```
 
-Never create duplicate PRs, automatically merge, target `release` or `master`, or create promotion PRs from `staging` to `release` or from `release` to `master`.
+Never create duplicate PRs, merge automatically, target `release` or `master`, or open promotion PRs from `staging` to `release` or from `release` to `master`.
 
-After the user explicitly accepts a slice, append one compact entry to `.agent/review-history.md` and mark the accepted slice compactly in `TASK_PLAN.md`. In each changed repository, remove:
+After the user accepts a slice, append one entry to `.agent/review-history.md`, mark the slice in `TASK_PLAN.md`, and in each changed repository delete:
 
 - `.agent/latest-codex-review.md`
 - `.agent/previous-codex-review.md`
@@ -138,4 +114,4 @@ After the user explicitly accepts a slice, append one compact entry to `.agent/r
 - `.agent/latest-codex-review-run.log`
 - `.agent/latest-test-output.txt`
 
-Replace `.agent/current-slice.md` for the next slice and reset `.agent/review-attempts` to `0`. Do not reset attempts before user acceptance, and do not copy complete review output into history.
+Then replace `.agent/current-slice.md` for the next slice and reset `.agent/review-attempts` to `0`. Never reset attempts before acceptance. Never copy full review output into history.
