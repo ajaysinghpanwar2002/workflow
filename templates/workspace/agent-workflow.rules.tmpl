@@ -1,0 +1,34 @@
+# Allow only the installed review launcher to escape the implementer's sandbox.
+# The launcher starts Codex with its own read-only reviewer sandbox.
+
+prefix_rule(
+    pattern = [["scripts/codex-review.sh", "./scripts/codex-review.sh"]],
+    decision = "allow",
+    justification = "Launches the separate read-only Codex reviewer; nested Codex needs network access",
+    match = [
+        "scripts/codex-review.sh",
+        "./scripts/codex-review.sh",
+        "scripts/codex-review.sh service-a",
+        "./scripts/codex-review.sh service-a",
+    ],
+    not_match = [
+        "scripts/install-agent-workflow.sh",
+        "scripts/install-workspace-workflow.sh",
+    ],
+)
+
+prefix_rule(
+    pattern = [["bash"], ["scripts/codex-review.sh", "./scripts/codex-review.sh"]],
+    decision = "allow",
+    justification = "Launches the separate read-only Codex reviewer via Bash; nested Codex needs network access",
+    match = [
+        "bash scripts/codex-review.sh",
+        "bash ./scripts/codex-review.sh",
+        "bash scripts/codex-review.sh service-a",
+        "bash ./scripts/codex-review.sh service-a",
+    ],
+    not_match = [
+        "bash scripts/other.sh",
+        "bash -c scripts/codex-review.sh",
+    ],
+)

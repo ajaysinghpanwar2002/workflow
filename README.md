@@ -1,78 +1,74 @@
 # Agent Workflow
 
-![Agent workflow meme](assets/agent-workflow-meme.png)
+Local implementer workflow with one independent, read-only Codex review per changed Git repository. Workspace mode is recommended, even for one repository.
 
-Small local workflow for using one agent as the implementer and a separate Codex
-process as the reviewer.
+## Workspace Mode
 
-## Start
+The workspace root is one work item. It must remain a plain directory: do not initialize it as Git or place it inside another Git repository. Launch Claude Code or interactive Codex from this directory.
 
-- Claude Code: read `CLAUDE.md` and follow it.
-- Codex CLI: say "You are the interactive implementer, not the Codex reviewer.
-  Read `AGENTS.md` and follow it."
-
-`IMPLEMENTER.md` holds the shared implementation loop. `CLAUDE.md` points to it
-directly. `AGENTS.md` deliberately does not: it is the file the dedicated Codex
-reviewer reads, so it carries the review rules and defers the implementation
-workflow to an explicit user instruction. That keeps a reviewer launched at the
-repository root from picking up the implementer loop.
-
-## Install Into A Codebase
-
-From a fresh pull of this workflow repo, open the codebase where you want to use
-the workflow and run:
+Multiple repositories:
 
 ```bash
+mkdir -p ~/Desktop/sprint-tasks/REC-2130
+cd ~/Desktop/sprint-tasks/REC-2130
+
+git clone <service-a-url> service-a
+git clone <service-b-url> service-b
+
+/path/to/workflow/scripts/install-workspace-workflow.sh
+```
+
+One repository:
+
+```bash
+mkdir -p ~/Desktop/sprint-tasks/REC-2130
+cd ~/Desktop/sprint-tasks/REC-2130
+
+git clone <service-a-url> service-a
+
+/path/to/workflow/scripts/install-workspace-workflow.sh
+```
+
+The workspace name (`REC-2130`) becomes the shared branch name and exact PR title. Ticket branches are based on `staging`, and PRs go from the ticket branch to `staging` only after tests, clean reviews, and explicit user approval.
+
+Each changed repository receives its own review, with at most two attempts per repository per slice:
+
+```bash
+scripts/codex-review.sh service-a
+scripts/codex-review.sh service-b
+```
+
+The installer examines direct children only, preserves project-owned repository-root `AGENTS.md` and `CLAUDE.md`, and installs reviewer instructions under each repository's `.agent/` directory.
+
+Start from the workspace root:
+
+```bash
+claude
+# or
+codex
+```
+
+## Legacy Direct-Repository Mode
+
+For backward compatibility, install directly into a repository that does not already have project-owned agent instructions:
+
+```bash
+cd service-a
 /path/to/workflow/scripts/install-agent-workflow.sh
 ```
 
-The installer copies `CLAUDE.md`, `AGENTS.md`, `IMPLEMENTER.md`, `TASK_PLAN.md`,
-`scripts/codex-review.sh`, and `.codex/rules/agent-workflow.rules` into that codebase,
-creates the `.agent/` working files, and adds all of it to the target repo's
-`.git/info/exclude`. It never overwrites a file that already exists.
+Run its review without an argument:
 
-## Codex As The Implementer
+```bash
+scripts/codex-review.sh
+```
 
-The reviewer is a nested `codex exec review` process and needs network access, so
-`scripts/codex-review.sh` cannot run inside the Codex implementer's sandbox.
-`.codex/rules/agent-workflow.rules` fixes this with a Codex execpolicy allow
-rule that lets exactly that one script run outside the sandbox without
-prompting — everything else the implementer does stays sandboxed, and the
-reviewer itself still runs with `--sandbox read-only` in the repository. The
-flow stays identical for both implementers; no model-side branching.
+Direct mode does not derive a ticket branch or PR title from the repository directory name.
 
-Project rules load only once you trust the repo's `.codex/` layer in Codex.
-Until then, approve the escalation prompt when the script runs. Keep the rule
-project-scoped: copied into `~/.codex/rules/` it would authorize
-`scripts/codex-review.sh` in every repository, including untrusted ones.
+## Development
 
-## Review Loop
+Installable content lives under `templates/` with `.tmpl` filenames so it cannot act as source-repository instructions. Run the portable integration suite with:
 
-1. Implement one cohesive slice.
-2. Run the relevant tests.
-3. Save test output to `.agent/latest-test-output.txt`.
-4. Run `scripts/codex-review.sh`. It launches Codex's dedicated review mode
-   (`codex exec review --uncommitted`) read-only in this repository, so the
-   reviewer selects the staged, unstaged, and untracked changes itself and can
-   read the rest of the repo for context. Its prose lands in
-   `.agent/latest-codex-review.md`.
-5. Read that prose. Findings mean fix, retest, and review again.
-6. A clearly clean review means stop so the user can review the slice.
-7. A failed, empty, or ambiguous review means blocked — never self-approve. On
-   failure the script writes no new `latest-codex-review.md`, so a stale review
-   cannot pass as the current result.
-
-The reviewer returns human-readable findings; there is no status token or JSON
-verdict to parse. `IMPLEMENTER.md` holds the full decision policy, and the
-cleanup to run once the user accepts a slice.
-
-## Files
-
-- `CLAUDE.md`: Claude Code entry instructions.
-- `AGENTS.md`: Codex review rules, read by the dedicated reviewer; holds no
-  implementation workflow by design.
-- `IMPLEMENTER.md`: shared implementer workflow and review decision policy.
-- `TASK_PLAN.md`: durable task plan and status.
-- `scripts/codex-review.sh`: launches the separate read-only Codex reviewer in
-  dedicated review mode.
-- `.codex/rules/agent-workflow.rules`: lets Codex-as-implementer run the review script outside its sandbox.
+```bash
+tests/run.sh
+```

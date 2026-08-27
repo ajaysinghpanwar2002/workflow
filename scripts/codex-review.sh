@@ -1,90 +1,171 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(git rev-parse --show-toplevel)"
-cd "$ROOT"
-
-mkdir -p .agent
-
-SLICE_FILE=".agent/current-slice.md"
-REVIEW_FILE=".agent/latest-codex-review.md"
-PREVIOUS_REVIEW_FILE=".agent/previous-codex-review.md"
-PENDING_REVIEW_FILE=".agent/pending-codex-review.md"
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 CODEX_REVIEW_MODEL="${CODEX_REVIEW_MODEL:-gpt-5.6-sol}"
 CODEX_REVIEW_REASONING_EFFORT="${CODEX_REVIEW_REASONING_EFFORT:-high}"
 
-# The reviewer is a nested `codex exec review` call and needs network access, so this
-# script cannot run inside a Codex implementer's sandbox. Fail fast with a
-# pointer instead of a late, cryptic network error. Commands allowed to run
-# outside the sandbox (via .codex/rules/ or an approved escalation) never see
-# this variable.
+canonical_git_root() {
+  local directory="$1"
+  local root
+  root="$(git -C "$directory" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  (cd "$root" && pwd -P)
+}
+
+script_git_root="$(canonical_git_root "$SCRIPT_ROOT")" || script_git_root=""
+
+if [ -n "$script_git_root" ]; then
+  if [ "$script_git_root" != "$SCRIPT_ROOT" ]; then
+    echo "The installed script root is inside another Git repository: $SCRIPT_ROOT" >&2
+    exit 1
+  fi
+  if [ "$#" -ne 0 ]; then
+    echo "Direct-repository mode accepts no repository argument." >&2
+    exit 1
+  fi
+  REPO_ROOT="$SCRIPT_ROOT"
+else
+  if [ "$#" -ne 1 ]; then
+    echo "Workspace mode requires exactly one direct child repository argument." >&2
+    exit 1
+  fi
+  case "$1" in
+    ''|'.'|'..'|*/*)
+      echo "Repository must be the name of one direct child directory." >&2
+      exit 1
+      ;;
+  esac
+
+  candidate="$SCRIPT_ROOT/$1"
+  if [ ! -d "$candidate" ]; then
+    echo "Repository is not a direct child directory: $1" >&2
+    exit 1
+  fi
+  resolved_candidate="$(cd "$candidate" && pwd -P)"
+  if [ "$(dirname "$resolved_candidate")" != "$SCRIPT_ROOT" ]; then
+    echo "Repository resolves outside the workspace: $1" >&2
+    exit 1
+  fi
+  repository_git_root="$(canonical_git_root "$resolved_candidate")" || {
+    echo "Selected child is not a Git repository: $1" >&2
+    exit 1
+  }
+  if [ "$repository_git_root" != "$resolved_candidate" ]; then
+    echo "Selected child is not exactly a Git repository root: $1" >&2
+    exit 1
+  fi
+  REPO_ROOT="$resolved_candidate"
+fi
+
+REVIEW_CWD="$REPO_ROOT/.agent"
+REVIEWER_INSTRUCTIONS="$REVIEW_CWD/AGENTS.md"
+SLICE_FILE="$REVIEW_CWD/current-slice.md"
+ATTEMPT_FILE="$REVIEW_CWD/review-attempts"
+REVIEW_FILE="$REVIEW_CWD/latest-codex-review.md"
+PREVIOUS_REVIEW_FILE="$REVIEW_CWD/previous-codex-review.md"
+PENDING_REVIEW_FILE="$REVIEW_CWD/pending-codex-review.md"
+RUN_LOG="$REVIEW_CWD/latest-codex-review-run.log"
+
+if [ -z "$(git -C "$REPO_ROOT" status --porcelain)" ]; then
+  echo "No staged, unstaged, or untracked changes found in: $REPO_ROOT" >&2
+  exit 1
+fi
+
+if [ ! -f "$REVIEWER_INSTRUCTIONS" ]; then
+  echo "Missing reviewer instructions: $REVIEWER_INSTRUCTIONS" >&2
+  exit 1
+fi
+
+if [ ! -f "$SLICE_FILE" ]; then
+  echo "Missing current slice: $SLICE_FILE" >&2
+  exit 1
+fi
+
+slice_details="$(sed \
+  -e '/^[[:space:]]*$/d' \
+  -e '/^[[:space:]]*# Slice[[:space:]]*$/d' \
+  -e '/^[[:space:]]*Goal:[[:space:]]*$/d' \
+  -e '/^[[:space:]]*Scope:[[:space:]]*$/d' \
+  -e '/^[[:space:]]*Out:[[:space:]]*$/d' \
+  -e '/^[[:space:]]*Tests:[[:space:]]*$/d' \
+  -e '/^[[:space:]]*Contract:[[:space:]]*$/d' \
+  "$SLICE_FILE")"
+if ! printf '%s' "$slice_details" | grep -q '[^[:space:]]'; then
+  echo "Current slice contains only empty template headings: $SLICE_FILE" >&2
+  exit 1
+fi
+
+if [ -e "$ATTEMPT_FILE" ]; then
+  attempt_count="$(sed -n '1,$p' "$ATTEMPT_FILE")"
+else
+  attempt_count="0"
+fi
+
+case "$attempt_count" in
+  0|1|2) ;;
+  *)
+    echo "Invalid review attempt counter; expected exactly 0, 1, or 2: $ATTEMPT_FILE" >&2
+    exit 1
+    ;;
+esac
+
+if [ "$attempt_count" -eq 2 ]; then
+  echo "Review limit reached for this slice: 2/2." >&2
+  echo "Mark the task Blocked and ask the user to intervene." >&2
+  exit 1
+fi
+
 if [ "${CODEX_SANDBOX_NETWORK_DISABLED:-}" = "1" ]; then
-  echo "ERROR: running inside a network-disabled Codex sandbox; the nested reviewer cannot reach the API." >&2
-  echo "Re-run this script outside the sandbox: request escalated permissions, or make sure the" >&2
-  echo "allow rule in .codex/rules/agent-workflow.rules is loaded (the project .codex/ layer must be trusted)." >&2
+  echo "ERROR: running inside a network-disabled Codex implementer sandbox." >&2
+  echo "Run the installed review script through its project-scoped allow rule." >&2
   exit 2
 fi
 
-if [ -z "$(git status --porcelain)" ]; then
-  echo "No staged, unstaged, or untracked changes found. Nothing to review." >&2
-  exit 1
-fi
-
-if [ ! -s "$SLICE_FILE" ]; then
-  echo "Missing or empty $SLICE_FILE." >&2
-  echo "Write the current slice spec (goal, scope, plan, test command) there first;" >&2
-  echo "the reviewer reads it from the repository to learn what the slice was meant to do." >&2
-  exit 1
-fi
-
-# Leftovers from the removed prompt-assembly flow. Delete them so nobody
-# mistakes them for input the reviewer still consumes.
-rm -f .agent/current-diff.patch .agent/codex-review-prompt.md
-
-# Fail closed: keep the last completed review for reference, then clear
-# REVIEW_FILE so a stale review can never be read as this run's result.
+# Clear stale approval artifacts only after every validation has passed.
 if [ -s "$REVIEW_FILE" ]; then
   mv "$REVIEW_FILE" "$PREVIOUS_REVIEW_FILE"
 fi
 rm -f "$REVIEW_FILE" "$PENDING_REVIEW_FILE"
 
-# Codex's dedicated review mode picks the uncommitted changes itself and brings
-# its own review prompt. It runs read-only in this repository, so it can inspect
-# surrounding code, tests, and docs for context.
+next_attempt=$((attempt_count + 1))
+attempt_temp="$(mktemp "$REVIEW_CWD/.review-attempts.XXXXXX")"
+cleanup_attempt_temp() {
+  rm -f "$attempt_temp"
+}
+trap cleanup_attempt_temp EXIT HUP INT TERM
+printf '%s\n' "$next_attempt" >"$attempt_temp"
+mv "$attempt_temp" "$ATTEMPT_FILE"
+trap - EXIT HUP INT TERM
+
+printf 'Codex review attempt %s/2\n' "$next_attempt"
+
 status=0
 codex exec \
   --model "$CODEX_REVIEW_MODEL" \
   --config "review_model=\"$CODEX_REVIEW_MODEL\"" \
   --config "model_reasoning_effort=\"$CODEX_REVIEW_REASONING_EFFORT\"" \
   --sandbox read-only \
-  --cd "$ROOT" \
+  --cd "$REVIEW_CWD" \
   --ephemeral \
   --color never \
   --output-last-message "$PENDING_REVIEW_FILE" \
-  review --uncommitted || status=$?
+  review --uncommitted >"$RUN_LOG" 2>&1 || status=$?
 
 review_failed() {
-  rm -f "$PENDING_REVIEW_FILE"
-  echo >&2
+  rm -f "$PENDING_REVIEW_FILE" "$REVIEW_FILE"
   echo "ERROR: $1" >&2
-  echo "This is a review failure, not an approval. $REVIEW_FILE was not written" >&2
-  echo "and any earlier review is kept at $PREVIOUS_REVIEW_FILE." >&2
-  echo "Mark the task blocked and stop for the user." >&2
+  echo "This review attempt was consumed and is not approval. See: $RUN_LOG" >&2
 }
 
 if [ "$status" -ne 0 ]; then
-  review_failed "the Codex reviewer exited with status $status; no review was produced."
+  review_failed "the Codex reviewer exited with status $status."
   exit "$status"
 fi
 
-if [ ! -s "$PENDING_REVIEW_FILE" ]; then
-  review_failed "the Codex reviewer finished but produced no final review text."
+if [ ! -s "$PENDING_REVIEW_FILE" ] || ! grep -q '[^[:space:]]' "$PENDING_REVIEW_FILE"; then
+  review_failed "the Codex reviewer produced no review text."
   exit 3
 fi
 
 mv "$PENDING_REVIEW_FILE" "$REVIEW_FILE"
-
-echo
-echo "Codex review written to: $REVIEW_FILE"
-echo "Read the prose and decide: findings -> fix, retest, review again; clearly clean -> stop"
-echo "for user review; ambiguous, truncated, or empty -> blocked, never self-approve."
+printf 'Codex review written to: %s\n' "$REVIEW_FILE"
