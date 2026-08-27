@@ -68,15 +68,19 @@ Task state is never touched on update: `TASK_PLAN.md`, `.agent/initial-request.m
 
 ## Review
 
+Name every repository the slice changed:
+
 ```bash
-scripts/codex-review.sh service-a
+scripts/codex-review.sh service-a service-b
 ```
 
-The reviewer runs from `service-a/.agent/`, reads only that repository's uncommitted changes, and cannot write. The attempt counter increments before the reviewer starts, so a crashed or empty review consumes an attempt and never counts as approval.
+Each repository gets its own reviewer, running from that repository's `.agent/`, reading only its uncommitted changes, unable to write. Every repository is validated first, so a bad argument consumes no attempt. Each repository's attempt counter then increments before its reviewer starts, so a crashed or empty review consumes an attempt and never counts as approval. A failed reviewer stops the run, and the repositories after it keep their attempts.
 
 ## Skills
 
 `templates/skills/` is installed into both `.claude/skills/` and `.codex/skills/` on every install. It ships `unslop`, vendored from [cursor/plugins](https://github.com/cursor/plugins/blob/main/pstack/skills/unslop/SKILL.md), which strips AI tells from written output. That repository declares no license.
+
+Agents load a skill body only when they invoke it, so the standing context cost is the one-line description. `unslop` is scoped to prose a person reads and tells the agent not to load it while editing code.
 
 Add a skill by dropping `templates/skills/<name>/SKILL.md` into this source repository.
 

@@ -1,11 +1,17 @@
 ---
 name: unslop
-description: Cut AI tells from any writing. Must always apply.
+description: Removes AI tells from writing people read. Use it for chat replies, docs, plans, commit messages, and PR bodies. Skip it while editing code.
 ---
 
 # Unslop
 
 Edit text to remove AI patterns and add human voice.
+
+## Scope
+
+Use this for writing a person reads. Chat replies, docs, plans, slices, commit messages, PR bodies.
+
+Skip it while editing code. Identifiers, log strings, test names, and inline comments do not need it.
 
 ## Process
 

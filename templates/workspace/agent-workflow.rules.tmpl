@@ -8,6 +8,7 @@ prefix_rule(
     match = [
         "scripts/codex-review.sh service-a",
         "./scripts/codex-review.sh service-a",
+        "scripts/codex-review.sh service-a service-b",
     ],
     not_match = [
         "scripts/install.sh",
@@ -21,6 +22,7 @@ prefix_rule(
     match = [
         "bash scripts/codex-review.sh service-a",
         "bash ./scripts/codex-review.sh service-a",
+        "bash scripts/codex-review.sh service-a service-b",
     ],
     not_match = [
         "bash scripts/other.sh",

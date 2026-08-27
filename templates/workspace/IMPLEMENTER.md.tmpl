@@ -10,7 +10,9 @@ Implement one slice at a time. Never expand scope silently.
 
 ## Writing
 
-Apply the `unslop` skill to every durable file: plans, slices, commit messages, PR bodies, docs, code comments.
+Apply the `unslop` skill to prose a person reads: replies to the user, plans, slices, commit messages, PR bodies, docs. Load it before writing that prose.
+
+Do not load it while editing code. Identifiers, log strings, test names, and inline comments do not need it.
 
 State decisions, evidence, failures, and the next action. Cut everything else.
 
@@ -47,7 +49,14 @@ For each repository the slice changes:
 2. Implement the scoped change.
 3. Run the relevant tests.
 4. Write the output to `.agent/latest-test-output.txt`.
-5. Run `scripts/codex-review.sh <repository>`.
+
+Then review every changed repository in one call, naming each one:
+
+```bash
+scripts/codex-review.sh service-a service-b
+```
+
+Every repository is validated before the first reviewer starts, so a bad argument consumes no attempt. Each repository keeps its own attempt counter and review file. If a reviewer fails, the repositories after it are not reviewed and keep their attempts: fix that failure first, then call the script again with the repositories still to review.
 
 The slice is clean only when every changed repository has a clean latest review.
 

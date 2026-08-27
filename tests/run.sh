@@ -142,12 +142,19 @@ make_fake_path() {
   printf '%s\n' "$directory/bin"
 }
 
+make_reviewable() {
+  local workspace="$1"
+  local repository="$2"
+  printf '# Slice\n\nGoal: Review change\n\nScope: %s\n\nOut: everything else\n\nTests: true\n\nContract:\n' \
+    "$repository" >"$workspace/$repository/.agent/current-slice.md"
+  printf 'change\n' >"$workspace/$repository/change.txt"
+}
+
 prepare_review_workspace() {
   local directory="$1"
   new_workspace "$directory/workspace" service-a service-b
   install_into "$directory/workspace" >/dev/null
-  printf '# Slice\n\nGoal: Review change\n\nScope: service-a\n\nOut: service-b\n\nTests: true\n\nContract:\n' >"$directory/workspace/service-a/.agent/current-slice.md"
-  printf 'change\n' >"$directory/workspace/service-a/change.txt"
+  make_reviewable "$directory/workspace" service-a
 }
 
 run_fake_review() {
@@ -417,13 +424,75 @@ test_review_argument_validation() {
   local script="$directory/workspace/scripts/codex-review.sh"
   if "$script" >"$directory/no-arg.log" 2>&1; then return 1; fi
   assert_contains "$directory/no-arg.log" 'Usage: codex-review.sh <repository>'
-  if "$script" service-a service-b >"$directory/many.log" 2>&1; then return 1; fi
   if "$script" 'service-a/nested' >"$directory/nested.log" 2>&1; then return 1; fi
   if "$script" '..' >"$directory/dotdot.log" 2>&1; then return 1; fi
   if "$script" '/tmp' >"$directory/outside.log" 2>&1; then return 1; fi
   mkdir -p "$directory/workspace/not-git"
   if "$script" not-git >"$directory/not-git.log" 2>&1; then return 1; fi
+  if "$script" service-a service-a >"$directory/duplicate.log" 2>&1; then return 1; fi
+  assert_contains "$directory/duplicate.log" 'Repository listed more than once: service-a'
   assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/review-attempts")" '0'
+}
+
+test_review_validates_every_repository_before_starting() {
+  local directory="$TEST_ROOT/review-preflight"
+  prepare_review_workspace "$directory"
+  make_fake_path "$directory/fake" >/dev/null
+  local script="$directory/workspace/scripts/codex-review.sh"
+
+  # service-b is named but has no changes, so nothing runs for service-a either.
+  if run_fake_review "$directory/fake" "$script" service-a service-b >"$directory/clean.log" 2>&1; then return 1; fi
+  assert_contains "$directory/clean.log" 'No staged, unstaged, or untracked changes found in service-b'
+  assert_not_exists "$directory/fake/records/count"
+  assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/review-attempts")" '0'
+
+  # service-b is changed but its slice is still the empty template.
+  printf 'change\n' >"$directory/workspace/service-b/change.txt"
+  if run_fake_review "$directory/fake" "$script" service-a service-b >"$directory/slice.log" 2>&1; then return 1; fi
+  assert_contains "$directory/slice.log" 'Current slice for service-b contains only empty template headings'
+  assert_not_exists "$directory/fake/records/count"
+  assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/review-attempts")" '0'
+
+  # service-b already used both of its attempts.
+  make_reviewable "$directory/workspace" service-b
+  printf '2\n' >"$directory/workspace/service-b/.agent/review-attempts"
+  if run_fake_review "$directory/fake" "$script" service-a service-b >"$directory/limit.log" 2>&1; then return 1; fi
+  assert_contains "$directory/limit.log" 'Review limit reached for this slice: 2/2 in service-b.'
+  assert_not_exists "$directory/fake/records/count"
+  assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/review-attempts")" '0'
+}
+
+test_review_covers_every_named_repository() {
+  local directory="$TEST_ROOT/review-many"
+  prepare_review_workspace "$directory"
+  make_reviewable "$directory/workspace" service-b
+  make_fake_path "$directory/fake" >/dev/null
+  run_fake_review "$directory/fake" "$directory/workspace/scripts/codex-review.sh" \
+    service-a service-b >"$directory/output" 2>&1
+  assert_eq "$(sed -n '1p' "$directory/fake/records/count")" '2'
+  assert_file "$directory/workspace/service-a/.agent/latest-codex-review.md"
+  assert_file "$directory/workspace/service-b/.agent/latest-codex-review.md"
+  assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/review-attempts")" '1'
+  assert_eq "$(sed -n '1p' "$directory/workspace/service-b/.agent/review-attempts")" '1'
+  assert_contains "$directory/output" '- service-a: review written, attempt 1/2'
+  assert_contains "$directory/output" '- service-b: review written, attempt 1/2'
+}
+
+test_review_stops_at_the_first_failure() {
+  local directory="$TEST_ROOT/review-stop"
+  prepare_review_workspace "$directory"
+  make_reviewable "$directory/workspace" service-b
+  make_fake_path "$directory/fake" >/dev/null
+  TEST_CODEX_EXIT=7
+  if run_fake_review "$directory/fake" "$directory/workspace/scripts/codex-review.sh" \
+    service-a service-b >"$directory/output" 2>&1; then return 1; fi
+  unset TEST_CODEX_EXIT
+  assert_eq "$(sed -n '1p' "$directory/fake/records/count")" '1'
+  assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/review-attempts")" '1'
+  assert_eq "$(sed -n '1p' "$directory/workspace/service-b/.agent/review-attempts")" '0'
+  assert_not_exists "$directory/workspace/service-b/.agent/latest-codex-review.md"
+  assert_contains "$directory/output" '- service-a: reviewer failed, attempt 1/2 consumed'
+  assert_contains "$directory/output" '- service-b: not reviewed, attempts untouched'
 }
 
 test_review_rejects_a_git_workspace() {
@@ -463,7 +532,7 @@ test_review_attempt_limit() {
   assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/review-attempts")" '2'
   if run_fake_review "$directory/fake" "$script" service-a >"$directory/third.log" 2>&1; then return 1; fi
   assert_eq "$(sed -n '1p' "$directory/fake/records/count")" '2'
-  assert_contains "$directory/third.log" 'Review limit reached for this slice: 2/2.'
+  assert_contains "$directory/third.log" 'Review limit reached for this slice: 2/2 in service-a.'
   assert_contains "$directory/third.log" 'Mark the task Blocked and ask the user to intervene.'
 }
 
@@ -539,6 +608,9 @@ test_templates_capture_required_policy() {
   assert_contains "$implementer" 'promotion PRs from `staging` to `release`'
   assert_contains "$implementer" 'without explicit user approval'
   assert_contains "$implementer" 'The slice is clean only when every changed repository has a clean latest review.'
+  assert_contains "$implementer" 'scripts/codex-review.sh service-a service-b'
+  assert_contains "$implementer" 'Do not load it while editing code.'
+  assert_contains "$SOURCE_ROOT/templates/skills/unslop/SKILL.md" 'Skip it while editing code.'
 }
 
 run_test 'source templates stay inert in this repository' test_source_template_isolation
@@ -556,7 +628,10 @@ run_test 'update abort writes nothing' test_update_abort_writes_nothing
 run_test 'installer refuses non-regular managed paths' test_refuses_non_regular_managed_paths
 run_test 'installer preserves project instructions and excludes only .agent' test_preserves_project_instructions_and_excludes
 run_test 'installer skips its own source repository child' test_skips_source_repository_child
-run_test 'review validates its repository argument' test_review_argument_validation
+run_test 'review validates its repository arguments' test_review_argument_validation
+run_test 'review validates every repository before starting' test_review_validates_every_repository_before_starting
+run_test 'review covers every named repository' test_review_covers_every_named_repository
+run_test 'review stops at the first failing repository' test_review_stops_at_the_first_failure
 run_test 'review rejects a Git workspace root' test_review_rejects_a_git_workspace
 run_test 'review targets only the selected repository' test_review_targets_only_the_selected_repository
 run_test 'review attempts stop after two launches' test_review_attempt_limit

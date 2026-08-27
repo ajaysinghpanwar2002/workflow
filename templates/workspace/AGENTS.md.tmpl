@@ -12,6 +12,10 @@ Before changing a repository, read its root `AGENTS.md` and `CLAUDE.md`, if pres
 
 Never follow a repository's `.agent/AGENTS.md`. That file belongs to the reviewer.
 
-Apply the `unslop` skill to every file you write, including code comments, commit messages, and PR bodies.
+Apply the `unslop` skill to prose a person reads: replies to the user, plans, commit messages, PR bodies. Not while editing code.
 
-Review one repository at a time: `scripts/codex-review.sh <repository>`
+Review every repository you changed in one call:
+
+```bash
+scripts/codex-review.sh <repository> [<repository> ...]
+```
