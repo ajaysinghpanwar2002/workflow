@@ -38,6 +38,7 @@ if [ "${WORKFLOW_FAKE_CODEX:-}" = "1" ]; then
   if [ -n "$output_file" ]; then
     printf '%s' "${FAKE_CODEX_OUTPUT-No actionable findings.}" >"$output_file"
   fi
+  printf 'fake codex reviewer diagnostic\n'
   exit "${FAKE_CODEX_EXIT:-0}"
 fi
 
@@ -68,6 +69,13 @@ assert_not_exists() {
 assert_contains() {
   grep -Fq -- "$2" "$1" || {
     echo "Expected '$2' in $1" >&2
+    exit 1
+  }
+}
+
+assert_line() {
+  grep -qxF -- "$2" "$1" || {
+    echo "Expected exact line '$2' in $1" >&2
     exit 1
   }
 }
@@ -540,6 +548,37 @@ test_install_migrates_a_counter_left_in_the_reviewer_directory() {
   assert_not_exists "$directory/workspace/service-a/.agent/latest-codex-review-run.log"
 }
 
+test_review_reports_scope_and_hands_over_the_review() {
+  local directory="$TEST_ROOT/review-output"
+  prepare_review_workspace "$directory"
+  # One changed line in a tracked file, plus a new file of three lines.
+  printf 'base\nmore\n' >"$directory/workspace/service-a/base.txt"
+  printf 'a\nb\nc\n' >"$directory/workspace/service-a/change.txt"
+  make_fake_path "$directory/fake" >/dev/null
+  TEST_CODEX_OUTPUT='Finding: the new path never closes the client.'
+  run_fake_review "$directory/fake" "$directory/workspace/scripts/codex-review.sh" \
+    service-a >"$directory/output" 2>&1
+  unset TEST_CODEX_OUTPUT
+
+  # The reviewer's own directory is excluded, so the slice file is not scope.
+  assert_contains "$directory/output" 'service-a: Codex review attempt 1/2, 2 files and 4 lines under review'
+  assert_line "$directory/output" '--- service-a review ---'
+  assert_contains "$directory/output" 'Finding: the new path never closes the client.'
+  assert_line "$directory/output" '--- end of service-a review ---'
+}
+
+test_review_prints_the_failure_tail_itself() {
+  local directory="$TEST_ROOT/review-tail"
+  prepare_review_workspace "$directory"
+  make_fake_path "$directory/fake" >/dev/null
+  TEST_CODEX_EXIT=7
+  if run_fake_review "$directory/fake" "$directory/workspace/scripts/codex-review.sh" \
+    service-a >"$directory/output" 2>&1; then return 1; fi
+  unset TEST_CODEX_EXIT
+  assert_contains "$directory/output" 'Last 20 lines of'
+  assert_contains "$directory/output" 'fake codex reviewer diagnostic'
+}
+
 test_review_rejects_a_git_workspace() {
   local directory="$TEST_ROOT/review-git-workspace"
   prepare_review_workspace "$directory"
@@ -646,7 +685,8 @@ test_templates_capture_required_policy() {
   assert_contains "$reviewer" 'read the workspace root'
   assert_contains "$reviewer" 'Read nothing else above the repository.'
   assert_contains "$implementer" '.agent/reviews/<repository>/'
-  assert_contains "$implementer" 'Read a review run log only after a review failed'
+  assert_contains "$implementer" 'Never open a review run log.'
+  assert_contains "$implementer" 'paid for again in every session that follows'
   assert_contains "$implementer" 'Files survive a compaction. Context does not.'
   assert_contains "$implementer" 'Two review attempts per repository per slice. Never a third.'
   assert_contains "$implementer" 'unslop'
@@ -684,6 +724,8 @@ run_test 'review covers every named repository' test_review_covers_every_named_r
 run_test 'review stops at the first failing repository' test_review_stops_at_the_first_failure
 run_test 'review keeps harness state out of the reviewer directory' test_review_keeps_harness_state_out_of_the_reviewer_directory
 run_test 'install migrates a counter left in the reviewer directory' test_install_migrates_a_counter_left_in_the_reviewer_directory
+run_test 'review reports slice size and hands over the review' test_review_reports_scope_and_hands_over_the_review
+run_test 'review prints the failure tail itself' test_review_prints_the_failure_tail_itself
 run_test 'review rejects a Git workspace root' test_review_rejects_a_git_workspace
 run_test 'review targets only the selected repository' test_review_targets_only_the_selected_repository
 run_test 'review attempts stop after two launches' test_review_attempt_limit

@@ -166,7 +166,36 @@ validate_repository() {
 review_failed() {
   rm -f "$PENDING_REVIEW_FILE" "$REVIEW_FILE"
   echo "ERROR in $1: $2" >&2
-  echo "This review attempt was consumed and is not approval. See: $RUN_LOG" >&2
+  echo "This review attempt was consumed and is not approval." >&2
+
+  # The reason a reviewer died is at the end of its log. Print that much so the
+  # caller never opens the log itself: it holds the reviewer's whole transcript.
+  if [ -s "$RUN_LOG" ]; then
+    echo "Last 20 lines of $RUN_LOG:" >&2
+    tail -20 "$RUN_LOG" >&2
+  fi
+}
+
+# The size of what the reviewer is about to read. A slice that needs a large
+# diff to reach its first review has no room left for a second attempt.
+set_review_scope() {
+  local repository="$1"
+  local file
+
+  SCOPE_FILES=$((
+    $(git -C "$repository" diff --name-only HEAD 2>/dev/null | wc -l) +
+    $(git -C "$repository" ls-files --others --exclude-standard | wc -l)
+  ))
+  SCOPE_LINES="$(git -C "$repository" diff --numstat HEAD 2>/dev/null |
+    awk '{ added += $1; removed += $2 } END { print added + removed + 0 }')"
+
+  # numstat covers tracked files only, and a slice is mostly new files.
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    SCOPE_LINES=$((SCOPE_LINES + $(wc -l <"$repository/$file" 2>/dev/null || echo 0)))
+  done <<UNTRACKED
+$(git -C "$repository" ls-files --others --exclude-standard)
+UNTRACKED
 }
 
 review_repository() {
@@ -194,7 +223,9 @@ review_repository() {
   mv "$ATTEMPT_TEMP" "$ATTEMPT_FILE"
   trap - EXIT HUP INT TERM
 
-  printf '\n%s: Codex review attempt %s/2\n' "$name" "$LAST_ATTEMPT"
+  set_review_scope "$repository"
+  printf '\n%s: Codex review attempt %s/2, %s files and %s lines under review\n' \
+    "$name" "$LAST_ATTEMPT" "$SCOPE_FILES" "$SCOPE_LINES"
 
   codex exec \
     --model "$CODEX_REVIEW_MODEL" \
@@ -219,6 +250,14 @@ review_repository() {
 
   mv "$PENDING_REVIEW_FILE" "$REVIEW_FILE"
   printf '%s: review written to %s\n' "$name" "$REVIEW_FILE"
+
+  # The caller has to act on this, so hand it over instead of making it read the
+  # file back.
+  printf -- '--- %s review ---\n' "$name"
+  cat "$REVIEW_FILE"
+  # A last message from the reviewer does not always end in a newline.
+  [ -z "$(tail -c 1 "$REVIEW_FILE")" ] || printf '\n'
+  printf -- '--- end of %s review ---\n' "$name"
   return 0
 }
 

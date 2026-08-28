@@ -83,7 +83,13 @@ A slice path the reviewer's repository does not have resolves against the worksp
 
 ## Context
 
-One slice runs in one session. Across three real slices in one workspace, each run ended between 85% and 97% of the model's window with a clean first review, which leaves nothing for a second attempt. `IMPLEMENTER.md` carries the rules that follow from that: edit files with the editing tool rather than heredoc rewrites, read a doc the slice names once instead of grepping it repeatedly, keep test output and review run logs on disk instead of on screen, and update `TASK_PLAN.md` as the slice goes so a compaction costs nothing.
+One slice runs in one session, and the window has to hold the code, the tests, the review, and a second review attempt. Across three real slices in one workspace, each run ended between 85% and 97% of the model's window with a clean first review, so a second attempt had nowhere to go.
+
+Most of that is the implementer's own output, which no reading rule shrinks. Slice size is the lever, so the review script reports each repository's scope in files and lines before it launches a reviewer. That number is comparable across slices and services, and it is the one honest signal that a slice was too big.
+
+The script also hands back what the caller would otherwise go and read: the review itself on success, and the last 20 lines of the run log when a reviewer dies. Nothing needs to open a run log, and `IMPLEMENTER.md` says not to.
+
+The rest of the rules there follow from the same accounting: edit a file with the editing tool rather than rewriting it through a heredoc, read a doc the slice names once instead of grepping it repeatedly, send test output to a file and keep the tail, keep `TASK_PLAN.md` and the review history to what nothing else carries, and update the plan as the slice goes so a compaction costs nothing.
 
 ## Skills
 

@@ -8,6 +8,8 @@ Implement one slice at a time. Never expand scope silently.
 
 `TASK_PLAN.md` status is one of: `Not started`, `In progress`, `Blocked`, `Waiting for user review`, `Done`.
 
+`TASK_PLAN.md` and `.agent/review-history.md` are read at the start of every session, so they carry only what nothing else carries: status, slice order, decisions with dates, and what is blocked. Slice scope belongs in that repository's `.agent/current-slice.md`, a fact belongs in the doc that owns it, checkout state belongs in Git, and the history gets one line per accepted slice. Whatever is copied into these two files is paid for again in every session that follows.
+
 ## Writing
 
 Apply the `unslop` skill to prose a person reads: replies to the user, plans, slices, commit messages, PR bodies, docs. Load it before writing that prose.
@@ -23,10 +25,10 @@ One slice runs in one session, and the window has to hold the code, the tests, t
 - Edit an existing file with the file-editing tool. A heredoc or a `python3` rewrite re-emits the whole file to change a few lines.
 - Use absolute paths, or `git -C <repository>`. A relative `cd` fails as soon as the shell is not where you assumed it was.
 - Read a file the slice names once, in full. Repeated greps over one large doc cost more than the single read and hide the parts you did not think to search for.
-- Read a review run log only after a review failed, and only its tail. It holds the reviewer's entire transcript.
+- Never open a review run log. It holds the reviewer's whole transcript, and the review script already prints the review and, when a reviewer dies, the tail that says why.
 - Update `TASK_PLAN.md` as the slice progresses. Files survive a compaction. Context does not.
 
-Split a slice that cannot reach its second review attempt in one session, and say so before you start.
+The review script reports each repository's scope in files and lines before it launches a reviewer. That number is the slice's real size. Split a slice that cannot reach its second review attempt in one session, and say so before you start.
 
 ## Skills
 
@@ -135,5 +137,7 @@ After the user accepts a slice, append one entry to `.agent/review-history.md`, 
 - `.agent/latest-test-output.txt`
 
 The review harness keeps its own state at the workspace root, in `.agent/reviews/<repository>/`: the run log, the pending review, and the attempt counter. It is out of the reviewer's working directory on purpose, so the reviewer cannot read its own live log or count its remaining attempts. Never move it back.
+
+Nothing needs to read a run log. Delete it with the rest.
 
 Delete `.agent/reviews/<repository>/` to clear that repository's run log and reset its attempt counter. Never reset attempts before acceptance. Then replace `.agent/current-slice.md` for the next slice. Never copy full review output into history.
