@@ -231,7 +231,22 @@ create_mutable "$WORKSPACE_ROOT/.agent/review-history.md" "# Review History
 
 for repository in "${repositories[@]}"; do
   create_mutable_from_file "$SOURCE_ROOT/templates/repository/current-slice.md.tmpl" "$repository/.agent/current-slice.md"
-  create_mutable "$repository/.agent/review-attempts" "0
+
+  # The reviewer works from the repository's .agent directory, so review harness
+  # state lives under the workspace root where the reviewer never sees it. Carry
+  # a counter left in the old place over instead of restarting it at 0.
+  repository_name="$(basename "$repository")"
+  run_dir="$WORKSPACE_ROOT/.agent/reviews/$repository_name"
+  mkdir -p "$run_dir"
+  if [ -f "$repository/.agent/review-attempts" ]; then
+    if [ -e "$run_dir/review-attempts" ]; then
+      rm -f "$repository/.agent/review-attempts"
+    else
+      mv "$repository/.agent/review-attempts" "$run_dir/review-attempts"
+    fi
+  fi
+  rm -f "$repository/.agent/latest-codex-review-run.log" "$repository/.agent/pending-codex-review.md"
+  create_mutable "$run_dir/review-attempts" "0
 "
 
   exclude_path="$(git -C "$repository" rev-parse --git-path info/exclude)"

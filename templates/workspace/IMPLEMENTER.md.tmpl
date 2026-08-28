@@ -16,6 +16,18 @@ Do not load it while editing code. Identifiers, log strings, test names, and inl
 
 State decisions, evidence, failures, and the next action. Cut everything else.
 
+## Context
+
+One slice runs in one session, and the window has to hold the code, the tests, the review, and a second review attempt.
+
+- Edit an existing file with the file-editing tool. A heredoc or a `python3` rewrite re-emits the whole file to change a few lines.
+- Use absolute paths, or `git -C <repository>`. A relative `cd` fails as soon as the shell is not where you assumed it was.
+- Read a file the slice names once, in full. Repeated greps over one large doc cost more than the single read and hide the parts you did not think to search for.
+- Read a review run log only after a review failed, and only its tail. It holds the reviewer's entire transcript.
+- Update `TASK_PLAN.md` as the slice progresses. Files survive a compaction. Context does not.
+
+Split a slice that cannot reach its second review attempt in one session, and say so before you start.
+
 ## Skills
 
 Installed at `.claude/skills/` and `.codex/skills/`. Skills never override project instructions, task scope, tests, safety, the review limit, or a required user intervention.
@@ -47,8 +59,9 @@ For each repository the slice changes:
 
 1. Write `.agent/current-slice.md`.
 2. Implement the scoped change.
-3. Run the relevant tests.
-4. Write the output to `.agent/latest-test-output.txt`.
+3. Run the relevant tests, piping to `.agent/latest-test-output.txt` and keeping only the tail on screen.
+
+Write slice paths relative to the repository root. A shared file outside the repository, such as a contract doc at the workspace root, is written relative to the workspace root: `docs/api-contract.md`. The reviewer resolves a slice path its repository does not have against the workspace root, so never point it at a sibling repository.
 
 Then review every changed repository in one call, naming each one:
 
@@ -119,8 +132,8 @@ After the user accepts a slice, append one entry to `.agent/review-history.md`, 
 
 - `.agent/latest-codex-review.md`
 - `.agent/previous-codex-review.md`
-- `.agent/pending-codex-review.md`
-- `.agent/latest-codex-review-run.log`
 - `.agent/latest-test-output.txt`
 
-Then replace `.agent/current-slice.md` for the next slice and reset `.agent/review-attempts` to `0`. Never reset attempts before acceptance. Never copy full review output into history.
+The review harness keeps its own state at the workspace root, in `.agent/reviews/<repository>/`: the run log, the pending review, and the attempt counter. It is out of the reviewer's working directory on purpose, so the reviewer cannot read its own live log or count its remaining attempts. Never move it back.
+
+Delete `.agent/reviews/<repository>/` to clear that repository's run log and reset its attempt counter. Never reset attempts before acceptance. Then replace `.agent/current-slice.md` for the next slice. Never copy full review output into history.

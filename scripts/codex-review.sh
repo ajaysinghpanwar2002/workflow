@@ -23,16 +23,40 @@ canonical_git_root() {
   (cd "$root" && pwd -P)
 }
 
-# Every path this script touches for one repository.
+# Every path this script touches for one repository. The reviewer works from
+# REVIEW_CWD, so only files it should read live there. Harness state lives under
+# the workspace root, out of its sight: a reviewer that reads its own live run
+# log burns its context on its own transcript, and a reviewer that reads the
+# attempt counter learns whether this is its last chance.
 set_repository_paths() {
-  REVIEW_CWD="$1/.agent"
+  local repository="$1"
+  local name="$2"
+
+  REVIEW_CWD="$repository/.agent"
   REVIEWER_INSTRUCTIONS="$REVIEW_CWD/AGENTS.md"
   SLICE_FILE="$REVIEW_CWD/current-slice.md"
-  ATTEMPT_FILE="$REVIEW_CWD/review-attempts"
   REVIEW_FILE="$REVIEW_CWD/latest-codex-review.md"
   PREVIOUS_REVIEW_FILE="$REVIEW_CWD/previous-codex-review.md"
-  PENDING_REVIEW_FILE="$REVIEW_CWD/pending-codex-review.md"
-  RUN_LOG="$REVIEW_CWD/latest-codex-review-run.log"
+
+  RUN_DIR="$SCRIPT_ROOT/.agent/reviews/$name"
+  ATTEMPT_FILE="$RUN_DIR/review-attempts"
+  PENDING_REVIEW_FILE="$RUN_DIR/pending-codex-review.md"
+  RUN_LOG="$RUN_DIR/latest-codex-review-run.log"
+}
+
+# Workspaces installed while the counter still lived in the reviewer's
+# directory. Carry it over instead of silently restarting at 0.
+migrate_attempt_counter() {
+  local legacy="$REVIEW_CWD/review-attempts"
+
+  [ -f "$legacy" ] || return 0
+
+  mkdir -p "$RUN_DIR"
+  if [ -e "$ATTEMPT_FILE" ]; then
+    rm -f "$legacy"
+  else
+    mv "$legacy" "$ATTEMPT_FILE"
+  fi
 }
 
 # Sets RESOLVED_REPOSITORY. Called as a statement so a bad name can exit.
@@ -96,7 +120,8 @@ validate_repository() {
   local repository="$1"
   local name="$2"
 
-  set_repository_paths "$repository"
+  set_repository_paths "$repository" "$name"
+  migrate_attempt_counter
 
   if [ -z "$(git -C "$repository" status --porcelain)" ]; then
     echo "No staged, unstaged, or untracked changes found in $name: $repository" >&2
@@ -149,8 +174,9 @@ review_repository() {
   local name="$2"
   local status=0
 
-  set_repository_paths "$repository"
+  set_repository_paths "$repository" "$name"
   read_attempt_count "$name"
+  mkdir -p "$RUN_DIR"
 
   # Clear stale approval artifacts only after every validation has passed.
   if [ -s "$REVIEW_FILE" ]; then
@@ -158,8 +184,11 @@ review_repository() {
   fi
   rm -f "$REVIEW_FILE" "$PENDING_REVIEW_FILE"
 
+  # Left behind by a workspace that ran these into the reviewer's directory.
+  rm -f "$REVIEW_CWD/latest-codex-review-run.log" "$REVIEW_CWD/pending-codex-review.md"
+
   LAST_ATTEMPT=$((ATTEMPT_COUNT + 1))
-  ATTEMPT_TEMP="$(mktemp "$REVIEW_CWD/.review-attempts.XXXXXX")"
+  ATTEMPT_TEMP="$(mktemp "$RUN_DIR/.review-attempts.XXXXXX")"
   trap 'rm -f "$ATTEMPT_TEMP"' EXIT HUP INT TERM
   printf '%s\n' "$LAST_ATTEMPT" >"$ATTEMPT_TEMP"
   mv "$ATTEMPT_TEMP" "$ATTEMPT_FILE"

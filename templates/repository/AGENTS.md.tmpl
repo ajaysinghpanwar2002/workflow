@@ -17,15 +17,22 @@ Use a previous review only to check whether its findings were addressed. An earl
 
 Start from the diff. Read related code, tests, callers, configuration, and docs only as needed.
 
-Report actionable correctness, security, reliability, performance, maintainability, and test-coverage findings introduced by this slice. Ignore unrelated pre-existing issues.
+## Paths in the slice
+
+`current-slice.md` names paths relative to the repository root.
+
+A path this repository does not have belongs to the workspace root, the parent directory of the repository. Shared docs for the work item live there, and the `Contract:` path usually does. Read the file the slice names. Read nothing else above the repository.
 
 Do not:
 
 - edit files
 - run mutating commands
 - inspect sibling repositories
+- read the workspace root's `.agent/`, `TASK_PLAN.md`, `AGENTS.md`, or `IMPLEMENTER.md`: those drive the implementer, not you
 - launch another reviewer
 - run `codex-review.sh`
+
+Report actionable correctness, security, reliability, performance, maintainability, and test-coverage findings introduced by this slice. Ignore unrelated pre-existing issues.
 
 If there are no actionable findings, say so plainly.
 

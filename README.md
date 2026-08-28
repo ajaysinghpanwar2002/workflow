@@ -17,10 +17,11 @@ REC-2130/
 ├── .codex/skills/unslop/      # skill for Codex
 ├── .codex/rules/agent-workflow.rules
 ├── .agent/                    # initial-request.md, review-history.md
+│   └── reviews/service-a/     # attempt counter, run log, pending review
 ├── service-a/
 │   ├── AGENTS.md              # project owned, never touched
 │   ├── CLAUDE.md              # project owned, never touched
-│   └── .agent/                # AGENTS.md (reviewer), current-slice.md, review-attempts
+│   └── .agent/                # AGENTS.md (reviewer), current-slice.md, reviews
 └── service-b/
     └── ...
 ```
@@ -64,7 +65,7 @@ scripts/install.sh --overwrite-all
 scripts/install.sh --keep-all
 ```
 
-Task state is never touched on update: `TASK_PLAN.md`, `.agent/initial-request.md`, `.agent/review-history.md`, and each repository's `.agent/current-slice.md` and `.agent/review-attempts`. Neither is any repository's own `AGENTS.md` or `CLAUDE.md`.
+Task state is never touched on update: `TASK_PLAN.md`, `.agent/initial-request.md`, `.agent/review-history.md`, `.agent/reviews/<repository>/review-attempts`, and each repository's `.agent/current-slice.md`. Neither is any repository's own `AGENTS.md` or `CLAUDE.md`. A workspace installed before the attempt counter moved to the workspace root has its counter carried over, not reset.
 
 ## Review
 
@@ -75,6 +76,14 @@ scripts/codex-review.sh service-a service-b
 ```
 
 Each repository gets its own reviewer, running from that repository's `.agent/`, reading only its uncommitted changes, unable to write. Every repository is validated first, so a bad argument consumes no attempt. Each repository's attempt counter then increments before its reviewer starts, so a crashed or empty review consumes an attempt and never counts as approval. A failed reviewer stops the run, and the repositories after it keep their attempts.
+
+The reviewer's working directory holds only what the reviewer should read: its instructions, the slice, the test output, and the previous review. The run log, the pending review, and the attempt counter sit at the workspace root under `.agent/reviews/<repository>/`. A reviewer that can see its own live run log reads it and spends its context on its own transcript; one that can see the counter learns whether this is its last attempt.
+
+A slice path the reviewer's repository does not have resolves against the workspace root, so a shared `docs/` contract is reachable from a slice while sibling repositories stay off limits.
+
+## Context
+
+One slice runs in one session. Across three real slices in one workspace, each run ended between 85% and 97% of the model's window with a clean first review, which leaves nothing for a second attempt. `IMPLEMENTER.md` carries the rules that follow from that: edit files with the editing tool rather than heredoc rewrites, read a doc the slice names once instead of grepping it repeatedly, keep test output and review run logs on disk instead of on screen, and update `TASK_PLAN.md` as the slice goes so a compaction costs nothing.
 
 ## Skills
 
