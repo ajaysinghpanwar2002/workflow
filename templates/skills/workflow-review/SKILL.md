@@ -16,8 +16,8 @@ once with every changed direct-child directory name:
 Use the real path as a standalone command. No shell/env wrapper, pipeline,
 redirection, compound command, or direct Codex call.
 
-If sandboxed, request native approval for that exact command when permitted:
-the separate Codex process needs service/auth access; reviewer tools stay
+If sandboxed, request native approval for that exact command before launch
+when permitted. The separate Codex process needs service/auth access; reviewer tools stay
 read-only. If approval is unavailable or denied, stop and report the command
 and blocker. Never bypass restrictions, clear sandbox flags, broaden rules,
 or retry a denial another way.

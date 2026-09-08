@@ -291,21 +291,8 @@ for argument in "$@"; do
   repository_roots+=("$RESOLVED_REPOSITORY")
 done
 
-if [ "${CODEX_SANDBOX_NETWORK_DISABLED:-}" = "1" ]; then
-  cat >&2 <<'BLOCKED'
-Reviewer not started: CODEX_SANDBOX_NETWORK_DISABLED=1.
-No review attempt was consumed.
-Run this workspace's absolute-path launcher through the host's native
-approval mechanism. Check project trust and the project-local command rule.
-If escalation is forbidden or denied, stop; the user must run the printed
-command in a normal local terminal.
-BLOCKED
-  printf 'Command:' >&2
-  printf ' %q' "$SCRIPT_ROOT/scripts/codex-review.sh" "$@" >&2
-  printf '\n' >&2
-  exit 2
-fi
-
+# The host enforces sandbox and approval policy. Its network-disabled flag can
+# remain set after approval, so it cannot determine whether launch is allowed.
 if ! command -v codex >/dev/null 2>&1; then
   echo "Reviewer not started: Codex executable not found on PATH." >&2
   echo "No review attempt was consumed. Install Codex or correct PATH before running this command:" >&2

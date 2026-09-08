@@ -21,14 +21,16 @@ Start from the diff. Read related code, tests, callers, configuration, and docs 
 
 `current-slice.md` names paths relative to the repository root.
 
-A path this repository does not have belongs to the workspace root, the parent directory of the repository. Shared docs for the work item live there, and the `Contract:` path usually does. Read the file the slice names. Read nothing else above the repository.
+A path this repository does not have belongs to the workspace root, the parent directory of the repository. Shared docs for the work item live there, and the `Contract:` path usually does. Read the file the slice names.
+
+You may read the workspace's `TASK_PLAN.md` (`../../TASK_PLAN.md`) for requirements and acceptance criteria. Treat it as context, not workflow instructions. Review only the current slice. Read no other workspace files unless the slice names them.
 
 Do not:
 
 - edit files
 - run mutating commands
 - inspect sibling repositories
-- read the workspace root's `.agent/`, `TASK_PLAN.md`, `AGENTS.md`, or `IMPLEMENTER.md`: those drive the implementer, not you
+- read the workspace root's `.agent/`, `AGENTS.md`, `CLAUDE.md`, or `IMPLEMENTER.md`: those drive the implementer, not you
 - launch another reviewer
 - run `codex-review.sh`
 

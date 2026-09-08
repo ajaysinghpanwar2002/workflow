@@ -111,11 +111,16 @@ are direct-child names, not absolute repository paths. The launcher supplies
 `--cd <repository>/.agent` to each reviewer. Run it as a standalone command,
 without shell/env wrappers, pipelines, redirection, or compound commands.
 
-All repositories are checked before startup. Blocked startup or missing Codex
-preserves evidence and consumes no attempt. Started failures and empty reviews
-consume an attempt; later repositories remain unreviewed. A zero exit code
+All repositories are checked before startup. Failed validation, missing Codex,
+or host refusal to start the launcher preserves evidence and consumes no attempt.
+Started failures and empty reviews consume an attempt; later repositories
+remain unreviewed. A zero exit code
 means review text exists, not that it is clean. Read the printed review and
 failure tail; never open the full run log.
+
+The reviewer may read `TASK_PLAN.md` for requirements, keeping review limited
+to the current slice. The implementer records brief test results and limitations
+in `.agent/latest-test-output.txt`; some checks cannot run in a read-only review.
 
 The child uses `codex exec ... review --uncommitted`, `--sandbox read-only`,
 `--ephemeral`, and `--config 'approval_policy="never"'`. Defaults remain
@@ -154,6 +159,10 @@ codex --sandbox workspace-write --ask-for-approval on-request
 ```
 
 It does not grant implementation approval or override managed policy.
+The host enforces access. The launcher does not reject
+`CODEX_SANDBOX_NETWORK_DISABLED=1`: that flag can remain set after approval.
+It leaves the environment unchanged; a failed reviewer process still consumes
+an attempt and is not retried automatically.
 If escalation is forbidden, unavailable, or denied, stop and give the user
 the command to run in a normal local terminal. Never clear sandbox flags,
 broaden rules, disable restrictions, or retry a denial another way.

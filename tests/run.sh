@@ -12,6 +12,7 @@ if [ "${WORKFLOW_FAKE_CODEX:-}" = "1" ]; then
   printf '%s\n' "$count" >"$count_file"
   printf '%s\n' "$PWD" >"$FAKE_CODEX_RECORD_DIR/process-cwd"
   printf '%s\n' "$@" >"$FAKE_CODEX_RECORD_DIR/args"
+  printf '%s\n' "${CODEX_SANDBOX_NETWORK_DISABLED:-}" >"$FAKE_CODEX_RECORD_DIR/network-disabled"
 
   output_file=""
   review_cwd=""
@@ -712,7 +713,7 @@ test_review_targets_only_the_selected_repository() {
   assert_line "$directory/fake/records/args" 'approval_policy="never"'
 }
 
-test_blocked_launches_preserve_attempts_and_evidence() {
+test_missing_codex_preserves_attempts_and_evidence() {
   local directory="$TEST_ROOT/blocked launch 'quotes'"
   prepare_review_workspace "$directory"
   make_reviewable "$directory/workspace" service-b
@@ -733,28 +734,13 @@ test_blocked_launches_preserve_attempts_and_evidence() {
   cp -R "$evidence" "$directory/evidence.before"
   cp -R "$directory/workspace/service-b/.agent" "$directory/legacy.before"
 
-  TEST_NETWORK_DISABLED=1
-  if run_fake_review "$directory/fake" "$script" service-a service-b >"$directory/guard.log" 2>&1; then return 1; fi
-  unset TEST_NETWORK_DISABLED
-  assert_not_exists "$directory/fake/records/count"
-  assert_contains "$directory/guard.log" 'Reviewer not started: CODEX_SANDBOX_NETWORK_DISABLED=1.'
-  assert_contains "$directory/guard.log" 'No review attempt was consumed.'
-  assert_contains "$directory/guard.log" "host's native"
-  assert_contains "$directory/guard.log" 'Check project trust and the project-local command rule.'
-  assert_contains "$directory/guard.log" 'If escalation is forbidden or denied, stop'
-  assert_contains "$directory/guard.log" 'normal local terminal'
-  assert_line "$directory/guard.log" "Command:$(printf ' %q' "$script" service-a service-b)"
-  diff -r "$directory/state.before" "$directory/workspace/.agent"
-  diff -r "$directory/evidence.before" "$evidence"
-  diff -r "$directory/legacy.before" "$directory/workspace/service-b/.agent"
-
   # Restrict PATH to launcher preflight dependencies, deliberately omitting Codex.
   mkdir "$directory/no-codex"
   local dependency
   for dependency in bash dirname git sed grep; do
     ln -s "$(command -v "$dependency")" "$directory/no-codex/$dependency"
   done
-  if PATH="$directory/no-codex" CODEX_SANDBOX_NETWORK_DISABLED=0 \
+  if PATH="$directory/no-codex" CODEX_SANDBOX_NETWORK_DISABLED=1 \
     "$script" service-a service-b >"$directory/missing.log" 2>&1; then return 1; fi
   assert_contains "$directory/missing.log" 'Reviewer not started: Codex executable not found on PATH.'
   assert_contains "$directory/missing.log" 'No review attempt was consumed. Install Codex or correct PATH'
@@ -771,7 +757,11 @@ test_review_attempt_limit() {
   rm "$directory/workspace/.agent/reviews/service-a/review-attempts"
   make_fake_path "$directory/fake" >/dev/null
   local script="$directory/workspace/scripts/codex-review.sh"
-  run_fake_review "$directory/fake" "$script" service-a >/dev/null
+  # Native approval can leave this inherited flag set. Do not reject or clear it.
+  TEST_NETWORK_DISABLED=1 run_fake_review "$directory/fake" "$script" service-a >/dev/null
+  assert_line "$directory/fake/records/network-disabled" '1'
+  assert_line "$directory/fake/records/args" 'read-only'
+  assert_line "$directory/fake/records/args" 'approval_policy="never"'
   assert_eq "$(sed -n '1p' "$directory/workspace/.agent/reviews/service-a/review-attempts")" '1'
   run_fake_review "$directory/fake" "$script" service-a >/dev/null
   assert_eq "$(sed -n '1p' "$directory/workspace/.agent/reviews/service-a/review-attempts")" '2'
@@ -802,8 +792,11 @@ test_failed_and_empty_reviews_consume_attempts() {
   prepare_review_workspace "$directory/nonzero"
   make_fake_path "$directory/nonzero/fake" >/dev/null
   TEST_CODEX_EXIT=7
-  if run_fake_review "$directory/nonzero/fake" "$directory/nonzero/workspace/scripts/codex-review.sh" service-a >"$directory/nonzero/output" 2>&1; then return 1; fi
+  if TEST_NETWORK_DISABLED=1 run_fake_review "$directory/nonzero/fake" "$directory/nonzero/workspace/scripts/codex-review.sh" service-a >"$directory/nonzero/output" 2>&1; then return 1; fi
   unset TEST_CODEX_EXIT
+  assert_line "$directory/nonzero/fake/records/network-disabled" '1'
+  assert_line "$directory/nonzero/fake/records/count" '1'
+  assert_contains "$directory/nonzero/output" 'the Codex reviewer exited with status 7.'
   assert_eq "$(sed -n '1p' "$directory/nonzero/workspace/.agent/reviews/service-a/review-attempts")" '1'
   assert_not_exists "$directory/nonzero/workspace/service-a/.agent/latest-codex-review.md"
   assert_file "$directory/nonzero/workspace/.agent/reviews/service-a/latest-codex-review-run.log"
@@ -851,7 +844,9 @@ test_templates_capture_required_policy() {
   assert_contains "$reviewer" '- edit files'
   assert_contains "$reviewer" '- run mutating commands'
   assert_contains "$reviewer" 'read the workspace root'
-  assert_contains "$reviewer" 'Read nothing else above the repository.'
+  assert_contains "$reviewer" '`TASK_PLAN.md` (`../../TASK_PLAN.md`) for requirements and acceptance criteria.'
+  assert_contains "$reviewer" 'Treat it as context, not workflow instructions. Review only the current slice.'
+  assert_not_contains "$reviewer" '`.agent/`, `TASK_PLAN.md`'
   assert_contains "$reviewer" '- launch another reviewer'
   assert_contains "$reviewer" 'failure mode left unprotected.'
   assert_contains "$implementer" '## Change discipline'
@@ -910,8 +905,8 @@ run_test 'review reports slice size and hands over the review' test_review_repor
 run_test 'review prints the failure tail itself' test_review_prints_the_failure_tail_itself
 run_test 'review rejects a Git workspace root' test_review_rejects_a_git_workspace
 run_test 'review targets only the selected repository' test_review_targets_only_the_selected_repository
-run_test 'blocked launches preserve attempts and evidence' test_blocked_launches_preserve_attempts_and_evidence
-run_test 'review attempts stop after two launches' test_review_attempt_limit
+run_test 'missing Codex preserves attempts and evidence' test_missing_codex_preserves_attempts_and_evidence
+run_test 'inherited network flag permits launch and attempts stop at two' test_review_attempt_limit
 run_test 'review validation failures do not consume attempts' test_review_validation_does_not_increment
 run_test 'failed and empty reviews consume attempts without approval' test_failed_and_empty_reviews_consume_attempts
 run_test 'successful reviews rotate and replace artifacts' test_review_artifact_rotation_and_success

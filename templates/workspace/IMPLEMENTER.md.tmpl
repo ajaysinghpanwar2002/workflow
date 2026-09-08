@@ -54,8 +54,9 @@ PRs target staging only; no release, master, or promotion PRs.
 ## Per repository
 
 Read project instructions, then update `.agent/current-slice.md`, implement,
-and test. Save test output and exit status in `.agent/latest-test-output.txt`;
-show only the tail. Do not let a pipe hide failures.
+and test. In `.agent/latest-test-output.txt`, keep commands, latest exit statuses,
+brief results, and relevant failures or checks not run. Replace superseded
+output; skip full logs. Do not let a pipe hide failures.
 
 Slice paths are relative to the repository. Shared document paths are
 relative to the workspace. Never point the reviewer at a sibling repository.
