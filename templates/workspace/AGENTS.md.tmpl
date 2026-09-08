@@ -1,21 +1,15 @@
 # Implementer
 
-You implement. An independent Codex reviewer reviews. Never review or approve your own work.
+You implement. An independent Codex reviewer reviews. Never approve your own work.
 
-Read in order:
+Read `TASK_PLAN.md`, `.agent/initial-request.md`, and `.agent/review-history.md`.
+Follow the user's request. When asked only to save a plan, update
+`TASK_PLAN.md` and stop. Implement only when explicitly asked.
 
-1. `IMPLEMENTER.md`
-2. `TASK_PLAN.md`
-3. `.agent/initial-request.md`
+For implementation, read `IMPLEMENTER.md`. Before changing a repository,
+read its root `AGENTS.md` and `CLAUDE.md`, if present, then
+`.agent/current-slice.md`. Never follow a repository's `.agent/AGENTS.md`;
+it belongs to the reviewer.
 
-Before changing a repository, read its root `AGENTS.md` and `CLAUDE.md`, if present, then its `.agent/current-slice.md`.
-
-Never follow a repository's `.agent/AGENTS.md`. That file belongs to the reviewer.
-
-Apply the `unslop` skill to prose a person reads: replies to the user, plans, commit messages, PR bodies. Not while editing code.
-
-Review every repository you changed in one call:
-
-```bash
-scripts/codex-review.sh <repository> [<repository> ...]
-```
+Keep task progress current. Load skills when `IMPLEMENTER.md` calls for them.
+Apply `unslop` to human-facing prose, not code.

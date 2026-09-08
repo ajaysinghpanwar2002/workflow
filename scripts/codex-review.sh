@@ -103,6 +103,8 @@ read_attempt_count() {
 
   if [ -e "$ATTEMPT_FILE" ]; then
     ATTEMPT_COUNT="$(sed -n '1,$p' "$ATTEMPT_FILE")"
+  elif [ -f "$REVIEW_CWD/review-attempts" ]; then
+    ATTEMPT_COUNT="$(sed -n '1,$p' "$REVIEW_CWD/review-attempts")"
   else
     ATTEMPT_COUNT="0"
   fi
@@ -121,7 +123,6 @@ validate_repository() {
   local name="$2"
 
   set_repository_paths "$repository" "$name"
-  migrate_attempt_counter
 
   if [ -z "$(git -C "$repository" status --porcelain)" ]; then
     echo "No staged, unstaged, or untracked changes found in $name: $repository" >&2
@@ -204,6 +205,7 @@ review_repository() {
   local status=0
 
   set_repository_paths "$repository" "$name"
+  migrate_attempt_counter
   read_attempt_count "$name"
   mkdir -p "$RUN_DIR"
 
@@ -231,6 +233,7 @@ review_repository() {
     --model "$CODEX_REVIEW_MODEL" \
     --config "review_model=\"$CODEX_REVIEW_MODEL\"" \
     --config "model_reasoning_effort=\"$CODEX_REVIEW_REASONING_EFFORT\"" \
+    --config 'approval_policy="never"' \
     --sandbox read-only \
     --cd "$REVIEW_CWD" \
     --ephemeral \
@@ -289,9 +292,27 @@ for argument in "$@"; do
 done
 
 if [ "${CODEX_SANDBOX_NETWORK_DISABLED:-}" = "1" ]; then
-  echo "ERROR: running inside a network-disabled Codex implementer sandbox." >&2
-  echo "Run the installed review script through its project-scoped allow rule." >&2
+  cat >&2 <<'BLOCKED'
+Reviewer not started: CODEX_SANDBOX_NETWORK_DISABLED=1.
+No review attempt was consumed.
+Run this workspace's absolute-path launcher through the host's native
+approval mechanism. Check project trust and the project-local command rule.
+If escalation is forbidden or denied, stop; the user must run the printed
+command in a normal local terminal.
+BLOCKED
+  printf 'Command:' >&2
+  printf ' %q' "$SCRIPT_ROOT/scripts/codex-review.sh" "$@" >&2
+  printf '\n' >&2
   exit 2
+fi
+
+if ! command -v codex >/dev/null 2>&1; then
+  echo "Reviewer not started: Codex executable not found on PATH." >&2
+  echo "No review attempt was consumed. Install Codex or correct PATH before running this command:" >&2
+  printf 'Command:' >&2
+  printf ' %q' "$SCRIPT_ROOT/scripts/codex-review.sh" "$@" >&2
+  printf '\n' >&2
+  exit 127
 fi
 
 # Pass two reviews one repository at a time and stops at the first failure so

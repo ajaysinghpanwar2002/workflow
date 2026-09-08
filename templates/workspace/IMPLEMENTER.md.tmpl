@@ -1,143 +1,76 @@
 # Implementer
 
-The workspace root is one work item. Each direct child directory is an independent Git repository.
+The workspace is one work item. Each direct child repository is independent.
 
-Read `TASK_PLAN.md`, `.agent/initial-request.md`, and `.agent/review-history.md` before starting.
+## Task
 
-Implement one slice at a time. Never expand scope silently.
+Read `TASK_PLAN.md` before acting. `Planned` means implementation is not
+approved. Explain missing or unknown status and stop.
 
-`TASK_PLAN.md` status is one of: `Not started`, `In progress`, `Blocked`, `Waiting for user review`, `Done`.
+Implement only the slice the user authorizes. Set `In progress` before
+repository changes. A saved status, save-only request, or read-only question
+is not permission to edit. Save-only changes only `TASK_PLAN.md`, preserving
+its structure, decisions, validation criteria, and existing progress.
 
-`TASK_PLAN.md` and `.agent/review-history.md` are read at the start of every session, so they carry only what nothing else carries: status, slice order, decisions with dates, and what is blocked. Slice scope belongs in that repository's `.agent/current-slice.md`, a fact belongs in the doc that owns it, checkout state belongs in Git, and the history gets one line per accepted slice. Whatever is copied into these two files is paid for again in every session that follows.
+When `Blocked`, report the blocker and wait. When `Waiting for user review`,
+wait for acceptance or requested changes. When `Done`, wait for new work.
+Update progress at milestones and before stopping.
 
-## Writing
+## Change discipline
 
-Apply the `unslop` skill to prose a person reads: replies to the user, plans, slices, commit messages, PR bodies, docs. Load it before writing that prose.
+Make the smallest clear, correct change using existing patterns. Avoid
+unrelated cleanup, renaming, formatting, dependencies, and abstractions.
+Prefer readable code. Comment only non-obvious intent or constraints;
+preserve useful comments, public API docs, licenses, and warnings.
 
-Do not load it while editing code. Identifiers, log strings, test names, and inline comments do not need it.
+Run relevant checks. Add tests for new behavior, regressions, or realistic
+failures; extend existing tests where useful. Avoid duplicate coverage.
+Do not omit important tests to make the diff look smaller.
 
-State decisions, evidence, failures, and the next action. Cut everything else.
-
-## Context
-
-One slice runs in one session, and the window has to hold the code, the tests, the review, and a second review attempt.
-
-- Edit an existing file with the file-editing tool. A heredoc or a `python3` rewrite re-emits the whole file to change a few lines.
-- Use absolute paths, or `git -C <repository>`. A relative `cd` fails as soon as the shell is not where you assumed it was.
-- Read a file the slice names once, in full. Repeated greps over one large doc cost more than the single read and hide the parts you did not think to search for.
-- Never open a review run log. It holds the reviewer's whole transcript, and the review script already prints the review and, when a reviewer dies, the tail that says why.
-- Update `TASK_PLAN.md` as the slice progresses. Files survive a compaction. Context does not.
-
-The review script reports each repository's scope in files and lines before it launches a reviewer. That number is the slice's real size. Split a slice that cannot reach its second review attempt in one session, and say so before you start.
-
-## Skills
-
-Installed at `.claude/skills/` and `.codex/skills/`. Skills never override project instructions, task scope, tests, safety, the review limit, or a required user intervention.
+Inspect the diff before independent review. Remove accidental scope, but
+include necessary callers, contracts, migrations, and validation. Explain
+large changes and agree on a coherent split instead of expanding the slice.
 
 ## Branch
 
-Derive the branch from the workspace directory name:
+Set `WORKSPACE_ROOT` to the canonical absolute directory containing this
+file, regardless of the shell's current directory.
 
 ```bash
-WORK_ITEM="$(basename "$(pwd -P)")"
+WORK_ITEM="$(basename "$WORKSPACE_ROOT")"
 git check-ref-format --branch "$WORK_ITEM"
 ```
 
-Use that exact branch in every repository you change.
+Use that exact branch in each changed repository:
 
-Per repository, before editing:
-
-- Already on `$WORK_ITEM`: continue.
+- Already on it: continue, preserving unrelated work.
 - Another branch with uncommitted work: stop and ask the user.
-- Clean: fetch `staging`, reuse a local or remote `$WORK_ITEM` branch if one exists, otherwise create `$WORK_ITEM` from `origin/staging`.
+- Clean: fetch staging; reuse the existing local or remote work-item branch,
+  or create it from `origin/staging`.
 
-Never reset, delete, force-switch, or discard unrelated work.
-
-The full path is `$WORK_ITEM -> staging -> release -> master`. This workflow covers `$WORK_ITEM -> staging` only.
+Never discard unrelated work, reset, force-switch, or force-push.
+PRs target staging only; no release, master, or promotion PRs.
 
 ## Per repository
 
-For each repository the slice changes:
+Read project instructions, then update `.agent/current-slice.md`, implement,
+and test. Save test output and exit status in `.agent/latest-test-output.txt`;
+show only the tail. Do not let a pipe hide failures.
 
-1. Write `.agent/current-slice.md`.
-2. Implement the scoped change.
-3. Run the relevant tests, piping to `.agent/latest-test-output.txt` and keeping only the tail on screen.
+Slice paths are relative to the repository. Shared document paths are
+relative to the workspace. Never point the reviewer at a sibling repository.
 
-Write slice paths relative to the repository root. A shared file outside the repository, such as a contract doc at the workspace root, is written relative to the workspace root: `docs/api-contract.md`. The reviewer resolves a slice path its repository does not have against the workspace root, so never point it at a sibling repository.
+## Review and acceptance
 
-Then review every changed repository in one call, naming each one:
-
-```bash
-scripts/codex-review.sh service-a service-b
-```
-
-Every repository is validated before the first reviewer starts, so a bad argument consumes no attempt. Each repository keeps its own attempt counter and review file. If a reviewer fails, the repositories after it are not reviewed and keep their attempts: fix that failure first, then call the script again with the repositories still to review.
-
-The slice is clean only when every changed repository has a clean latest review.
-
-## Review limit
-
+After checks pass, load `workflow-review` for every changed repository.
 Two review attempts per repository per slice. Never a third.
+Only a clean latest independent review approves the current changes.
+Further changes invalidate approval. Never self-approve.
 
-Attempt 1:
+Never commit before independent review of uncommitted changes.
+Commit, push, PR creation, and the next slice each need explicit user approval.
+Load `workflow-pr` only for authorized publication.
 
-- Clean: that repository is done.
-- Findings: fix all in-scope findings, rerun tests, then attempt 2.
-- Failed, empty, contradictory, or ambiguous: mark Blocked, ask the user.
-
-Attempt 2:
-
-- Clean: that repository is done.
-- Anything else: mark Blocked, ask the user.
-
-A clean review expires the moment that repository changes again. With no attempt left, stop and ask the user.
-
-## Acceptance
-
-Never commit, push, open a PR, or move to the next slice without explicit user approval. Never commit before review: the reviewer reads uncommitted changes.
-
-After tests pass, every changed repository has a clean final review, and the user approves, commit and push. Then per repository:
-
-```bash
-gh pr list --head "$WORK_ITEM" --base staging --state open --json url --jq '.[0].url // empty'
-```
-
-If empty, create one:
-
-```bash
-gh pr create \
-  --base staging \
-  --head "$WORK_ITEM" \
-  --title "$WORK_ITEM" \
-  --body-file "$PR_BODY_FILE"
-```
-
-Body:
-
-```markdown
-## Summary
-
-<what changed>
-
-## Tests
-
-<commands and result>
-
-## Review
-
-Codex clean after attempt N/2.
-```
-
-Never create duplicate PRs, merge automatically, target `release` or `master`, or open promotion PRs from `staging` to `release` or from `release` to `master`.
-
-After the user accepts a slice, append one entry to `.agent/review-history.md`, mark the slice in `TASK_PLAN.md`, and in each changed repository delete:
-
-- `.agent/latest-codex-review.md`
-- `.agent/previous-codex-review.md`
-- `.agent/latest-test-output.txt`
-
-The review harness keeps its own state at the workspace root, in `.agent/reviews/<repository>/`: the run log, the pending review, and the attempt counter. It is out of the reviewer's working directory on purpose, so the reviewer cannot read its own live log or count its remaining attempts. Never move it back.
-
-Nothing needs to read a run log. Delete it with the rest.
-
-Delete `.agent/reviews/<repository>/` to clear that repository's run log and reset its attempt counter. Never reset attempts before acceptance. Then replace `.agent/current-slice.md` for the next slice. Never copy full review output into history.
+Use `workflow-state` for progress and, after acceptance, history and cleanup.
+Never reset attempts or remove evidence to get another review.
+Load skills when needed; if one is unavailable, report it and stop at its gate.

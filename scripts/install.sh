@@ -11,7 +11,7 @@ usage() {
 Usage: install.sh [--overwrite-all | --keep-all]
 
 Installs the agent workflow into the current directory, which must be a plain
-directory holding one or more direct child Git repositories.
+directory. Add direct child Git repositories now or after an empty bootstrap.
 
 Re-running updates the workflow. For each managed file that differs, you are
 asked per file whether to overwrite, keep, or show the diff.
@@ -60,11 +60,6 @@ for candidate in "$WORKSPACE_ROOT"/*; do
 
   repositories+=("$candidate_root")
 done
-
-if [ "${#repositories[@]}" -eq 0 ]; then
-  echo "No direct child Git repositories found in: $WORKSPACE_ROOT" >&2
-  exit 1
-fi
 
 # Managed files are owned by the workflow and are replaced on update.
 # Mutable files hold task state and are created once, never touched again.
@@ -203,20 +198,45 @@ create_mutable_from_file() {
   fi
 }
 
+# Render before conflict comparison. Escape the path as Starlark data, never
+# as a shell command or a sed replacement (paths may contain quotes and &).
+rendered_rules="$(mktemp "${TMPDIR:-/tmp}/workflow-rules.XXXXXX")"
+trap 'rm -f "$rendered_rules"' EXIT
+trap 'exit 1' HUP INT TERM
+launcher_path="$WORKSPACE_ROOT/scripts/codex-review.sh"
+escaped_launcher="${launcher_path//\\/\\\\}"
+escaped_launcher="${escaped_launcher//\"/\\\"}"
+escaped_launcher="${escaped_launcher//$'\n'/\\n}"
+escaped_launcher="${escaped_launcher//$'\r'/\\r}"
+escaped_launcher="${escaped_launcher//$'\t'/\\t}"
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in
+    *@LAUNCHER_PATH@*)
+      printf '%s"%s"%s\n' "${line%%@LAUNCHER_PATH@*}" "$escaped_launcher" "${line#*@LAUNCHER_PATH@}"
+      ;;
+    *) printf '%s\n' "$line" ;;
+  esac
+done <"$SOURCE_ROOT/templates/workspace/agent-workflow.rules.tmpl" >"$rendered_rules"
+
 plan_managed "$SOURCE_ROOT/templates/workspace/AGENTS.md.tmpl" "$WORKSPACE_ROOT/AGENTS.md"
 plan_managed "$SOURCE_ROOT/templates/workspace/CLAUDE.md.tmpl" "$WORKSPACE_ROOT/CLAUDE.md"
 plan_managed "$SOURCE_ROOT/templates/workspace/IMPLEMENTER.md.tmpl" "$WORKSPACE_ROOT/IMPLEMENTER.md"
 plan_managed "$SOURCE_ROOT/scripts/codex-review.sh" "$WORKSPACE_ROOT/scripts/codex-review.sh"
-plan_managed "$SOURCE_ROOT/templates/workspace/agent-workflow.rules.tmpl" "$WORKSPACE_ROOT/.codex/rules/agent-workflow.rules"
+plan_managed "$rendered_rules" "$WORKSPACE_ROOT/.codex/rules/agent-workflow.rules"
 
 for skill_dir in "$SOURCE_ROOT"/templates/skills/*; do
   [ -f "$skill_dir/SKILL.md" ] || continue
   skill_name="$(basename "$skill_dir")"
   plan_managed "$skill_dir/SKILL.md" "$WORKSPACE_ROOT/.claude/skills/$skill_name/SKILL.md"
-  plan_managed "$skill_dir/SKILL.md" "$WORKSPACE_ROOT/.codex/skills/$skill_name/SKILL.md"
+  plan_managed "$skill_dir/SKILL.md" "$WORKSPACE_ROOT/.agents/skills/$skill_name/SKILL.md"
+  # Keep existing legacy installs current without adding a second discovery
+  # location to fresh workspaces.
+  if [ -e "$WORKSPACE_ROOT/.codex/skills/$skill_name/SKILL.md" ] || [ -L "$WORKSPACE_ROOT/.codex/skills/$skill_name/SKILL.md" ]; then
+    plan_managed "$skill_dir/SKILL.md" "$WORKSPACE_ROOT/.codex/skills/$skill_name/SKILL.md"
+  fi
 done
 
-for repository in "${repositories[@]}"; do
+for repository in ${repositories[@]+"${repositories[@]}"}; do
   plan_managed "$SOURCE_ROOT/templates/repository/AGENTS.md.tmpl" "$repository/.agent/AGENTS.md"
 done
 
@@ -229,7 +249,7 @@ create_mutable "$WORKSPACE_ROOT/.agent/initial-request.md" "# Initial Request
 create_mutable "$WORKSPACE_ROOT/.agent/review-history.md" "# Review History
 "
 
-for repository in "${repositories[@]}"; do
+for repository in ${repositories[@]+"${repositories[@]}"}; do
   create_mutable_from_file "$SOURCE_ROOT/templates/repository/current-slice.md.tmpl" "$repository/.agent/current-slice.md"
 
   # The reviewer works from the repository's .agent directory, so review harness
@@ -271,7 +291,7 @@ printf 'Work item: %s\n' "$WORK_ITEM"
 printf 'Branch: %s\n' "$WORK_ITEM"
 printf 'PR base: staging\n\n'
 printf 'Repositories:\n'
-for repository in "${repositories[@]}"; do
+for repository in ${repositories[@]+"${repositories[@]}"}; do
   printf '%s\n' "- $(basename "$repository")"
 done
 printf '\nManaged files: %s created, %s updated, %s unchanged, %s kept\n' \
@@ -282,4 +302,11 @@ if [ "${#kept_files[@]}" -gt 0 ]; then
     printf '%s\n' "- ${kept#"$WORKSPACE_ROOT"/}"
   done
 fi
+if [ "${#repositories[@]}" -eq 0 ]; then
+  printf 'No repositories yet. Add direct child Git repositories and rerun the installer.\n'
+fi
 printf '\nStart `claude` or `codex` from: %s\n' "$WORKSPACE_ROOT"
+printf 'Review launcher (use as a standalone command):\n  %q <repository> [<repository> ...]\n' "$launcher_path"
+printf 'Rule check (no model):\n'
+printf '  codex execpolicy check --pretty --rules .codex/rules/agent-workflow.rules -- %q service-a\n' "$launcher_path"
+printf 'Project rules require trust and an active configuration layer. Restart Codex after rule changes.\n'

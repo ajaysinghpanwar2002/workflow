@@ -1,46 +1,48 @@
 # Agent Workflow
 
-A local workflow where one agent implements and a separate read-only Codex agent reviews. One review per changed repository, two attempts maximum, no self-approval.
-
-## Layout
-
-One workspace directory per work item, normally a Jira ticket. It stays a plain directory. Each direct child is an independent Git repository.
-
-```text
-REC-2130/
-├── AGENTS.md                  # implementer entry point
-├── CLAUDE.md                  # @AGENTS.md
-├── IMPLEMENTER.md             # the workflow
-├── TASK_PLAN.md               # task state
-├── scripts/codex-review.sh
-├── .claude/skills/unslop/     # skill for Claude Code
-├── .codex/skills/unslop/      # skill for Codex
-├── .codex/rules/agent-workflow.rules
-├── .agent/                    # initial-request.md, review-history.md
-│   └── reviews/service-a/     # attempt counter, run log, pending review
-├── service-a/
-│   ├── AGENTS.md              # project owned, never touched
-│   ├── CLAUDE.md              # project owned, never touched
-│   └── .agent/                # AGENTS.md (reviewer), current-slice.md, reviews
-└── service-b/
-    └── ...
-```
-
-The workspace directory name is the branch name and the exact PR title. Branches come off `staging`, and PRs target `staging` only after tests pass, reviews are clean, and the user approves.
+One agent implements; an independent read-only Codex agent reviews.
+Two review attempts per repository per slice. Publication needs user approval.
 
 ## Install
+
+Use a plain workspace directory with direct-child Git repositories:
 
 ```bash
 mkdir -p ~/Desktop/sprint-tasks/REC-2130
 cd ~/Desktop/sprint-tasks/REC-2130
-
 git clone <service-a-url> service-a
 git clone <service-b-url> service-b
-
 /path/to/workflow/scripts/install.sh
 ```
 
-One repository works the same way. Then start from the workspace root:
+One repository also works. You can install before adding repositories, then
+rerun the installer. Never install into this workflow source repository.
+
+```text
+REC-2130/
+├── AGENTS.md                  # implementer entrypoint
+├── CLAUDE.md                  # @AGENTS.md
+├── IMPLEMENTER.md             # implementation rules
+├── TASK_PLAN.md               # saved plan and progress
+├── scripts/codex-review.sh
+├── .claude/skills/            # Claude skills
+├── .agents/skills/            # Codex skills
+├── .codex/rules/agent-workflow.rules
+├── .agent/                    # initial request and accepted history
+│   └── reviews/<repository>/  # attempt counter, run log, pending review
+├── service-a/
+│   ├── AGENTS.md              # project owned, preserved
+│   ├── CLAUDE.md              # project owned, preserved
+│   └── .agent/                # reviewer instructions, slice, test/review output
+└── service-b/
+```
+
+The canonical workspace directory name is the branch and exact PR title.
+New branches start from `origin/staging`; PRs target staging only.
+
+## Start and save a plan
+
+From the workspace root:
 
 ```bash
 claude
@@ -48,61 +50,149 @@ claude
 codex
 ```
 
-## Update
+For the initial planning discussion, switch to Plan Mode in the UI.
+In Claude, cycle modes with `Shift+Tab`; in Codex, use `/plan` or your
+configured mode shortcut. Confirm the mode shown before discussing the task.
+Later sessions can read workspace `AGENTS.md` or `CLAUDE.md` and the saved plan.
 
-Run the installer again from the same workspace. Files the workflow owns are compared against the current templates. For each one that differs you get a per-file choice:
+When the plan is agreed, ask:
 
 ```text
-/path/REC-2130/IMPLEMENTER.md differs from the workflow version.
-  [d] diff  [o] overwrite  [k] keep  [a] overwrite all  [s] keep all  [q] abort
-Choice [k]:
+Save the plan we just agreed on into TASK_PLAN.md. Keep Status: Planned.
+Preserve the template structure and the plan's decisions, scope, ordering,
+and validation criteria. Do not implement anything. Stop after saving.
 ```
 
-Non-interactive use:
+Saving authorizes only that file write. Codex's [native Plan Mode](https://github.com/openai/codex/blob/main/codex-rs/collaboration-mode-templates/templates/plan.md)
+prohibits file edits; Claude has its own [plan-file restrictions](https://code.claude.com/docs/en/permission-modes).
+If saving is blocked, have the agent print the plan and paste it yourself,
+or leave the mode without approving implementation and repeat the save-only
+request. These files cannot override native restrictions.
+
+For an active task, preserve its existing status and progress unless you
+intend to replan. When ready to implement, optionally in a fresh session:
+
+```text
+Continue with implementation of slice 1 from TASK_PLAN.md.
+```
+
+`Planned` means work has not been authorized, not that planning is complete.
+Only explicit implementation approval, including a UI action to implement,
+starts the slice. Leaving a mode, choosing edit permissions, saving, or
+asking a read-only question does not. A bare "continue" during planning
+continues that discussion. The status is an instruction, not a write barrier.
+
+## Update
+
+Rerun the installer from the workspace. For each changed managed file,
+choose diff, overwrite, keep, or abort. With no answer, it keeps your version.
+For unattended updates:
 
 ```bash
-scripts/install.sh --overwrite-all
-scripts/install.sh --keep-all
+/path/to/workflow/scripts/install.sh --overwrite-all
+/path/to/workflow/scripts/install.sh --keep-all
 ```
 
-Task state is never touched on update: `TASK_PLAN.md`, `.agent/initial-request.md`, `.agent/review-history.md`, `.agent/reviews/<repository>/review-attempts`, and each repository's `.agent/current-slice.md`. Neither is any repository's own `AGENTS.md` or `CLAUDE.md`. A workspace installed before the attempt counter moved to the workspace root has its counter carried over, not reset.
+Both preserve the plan, accepted history, initial request, slice files,
+counters, and project-owned instructions. Rules are rendered before conflict
+checks; abort writes no managed files. Moving the workspace requires reinstalling
+and accepting its new absolute rule. Temporary rendering files are removed.
 
 ## Review
 
-Name every repository the slice changed:
+The implementer passes every changed repository directory name in one call:
 
 ```bash
-scripts/codex-review.sh service-a service-b
+"/path/to/REC-2130/scripts/codex-review.sh" service-a service-b
 ```
 
-Each repository gets its own reviewer, running from that repository's `.agent/`, reading only its uncommitted changes, unable to write. Every repository is validated first, so a bad argument consumes no attempt. Each repository's attempt counter then increments before its reviewer starts, so a crashed or empty review consumes an attempt and never counts as approval. A failed reviewer stops the run, and the repositories after it keep their attempts.
+Use the actual absolute launcher path printed during installation. Arguments
+are direct-child names, not absolute repository paths. The launcher supplies
+`--cd <repository>/.agent` to each reviewer. Run it as a standalone command,
+without shell/env wrappers, pipelines, redirection, or compound commands.
 
-The reviewer's working directory holds only what the reviewer should read: its instructions, the slice, the test output, and the previous review. The run log, the pending review, and the attempt counter sit at the workspace root under `.agent/reviews/<repository>/`. A reviewer that can see its own live run log reads it and spends its context on its own transcript; one that can see the counter learns whether this is its last attempt.
+All repositories are checked before startup. Blocked startup or missing Codex
+preserves evidence and consumes no attempt. Started failures and empty reviews
+consume an attempt; later repositories remain unreviewed. A zero exit code
+means review text exists, not that it is clean. Read the printed review and
+failure tail; never open the full run log.
 
-A slice path the reviewer's repository does not have resolves against the workspace root, so a shared `docs/` contract is reachable from a slice while sibling repositories stay off limits.
+The child uses `codex exec ... review --uncommitted`, `--sandbox read-only`,
+`--ephemeral`, and `--config 'approval_policy="never"'`. Defaults remain
+`gpt-6-astra` and high reasoning; `CODEX_REVIEW_MODEL` and
+`CODEX_REVIEW_REASONING_EFFORT` override them.
 
-## Context
+## Review startup troubleshooting
 
-One slice runs in one session, and the window has to hold the code, the tests, the review, and a second review attempt. Across three real slices in one workspace, each run ended between 85% and 97% of the model's window with a clean first review, so a second attempt had nowhere to go.
+The project rule permits only this workspace's absolute launcher. It trusts
+that script and future edits to it; the child's read-only sandbox does not
+sandbox the outer script. There are no generic shell or user-global permissions.
 
-Most of that is the implementer's own output, which no reading rule shrinks. Slice size is the lever, so the review script reports each repository's scope in files and lines before it launches a reviewer. That number is comparable across slices and services, and it is the one honest signal that a slice was too big.
+Project rules need a trusted workspace and active configuration layer.
+Restart Codex after rule changes. Files on disk do not prove they were loaded.
+See [rules](https://developers.openai.com/codex/rules/) and [project trust](https://developers.openai.com/codex/config-basic/).
 
-The script also hands back what the caller would otherwise go and read: the review itself on success, and the last 20 lines of the run log when a reviewer dies. Nothing needs to open a run log, and `IMPLEMENTER.md` says not to.
+From the installed workspace, check matching without invoking a model:
 
-The rest of the rules there follow from the same accounting: edit a file with the editing tool rather than rewriting it through a heredoc, read a doc the slice names once instead of grepping it repeatedly, send test output to a file and keep the tail, keep `TASK_PLAN.md` and the review history to what nothing else carries, and update the plan as the slice goes so a compaction costs nothing.
+```bash
+codex execpolicy check --pretty \
+  --rules .codex/rules/agent-workflow.rules \
+  -- "$(pwd -P)/scripts/codex-review.sh" service-a
+```
+
+This checks matching, not active trust, loaded configuration, or managed policy.
+Use `/status` and the CLI's configuration diagnostics for those. The launch
+error alone does not establish the cause.
+
+If the rule is inactive, request native approval for the exact command when
+permitted. A separate Codex process needs service/auth access while reviewer
+tools stay read-only. If your current Codex settings disallow requests, this
+optional launch configuration enables them:
+
+```bash
+codex --sandbox workspace-write --ask-for-approval on-request
+```
+
+It does not grant implementation approval or override managed policy.
+If escalation is forbidden, unavailable, or denied, stop and give the user
+the command to run in a normal local terminal. Never clear sandbox flags,
+broaden rules, disable restrictions, or retry a denial another way.
+See [approval settings](https://learn.chatgpt.com/docs/agent-approvals-security).
 
 ## Skills
 
-`templates/skills/` is installed into both `.claude/skills/` and `.codex/skills/` on every install. It ships `unslop`, vendored from [cursor/plugins](https://github.com/cursor/plugins/blob/main/pstack/skills/unslop/SKILL.md), which strips AI tells from written output. That repository declares no license.
+- `workflow-review`: independent review after passing checks.
+- `workflow-pr`: authorized commits, pushes, and staging PRs.
+- `workflow-state`: progress, accepted history, and cleanup.
+- `unslop`: short local writing instructions for human-facing prose.
 
-Agents load a skill body only when they invoke it, so the standing context cost is the one-line description. `unslop` is scoped to prose a person reads and tells the agent not to load it while editing code.
-
-Add a skill by dropping `templates/skills/<name>/SKILL.md` into this source repository.
+Skills load when needed; they never grant approval or replace required checks.
+Loaded instructions remain in context. Missing skills must be reported.
+Check discovery in Codex `/skills` or Claude's skill menu. Install paths follow
+[Codex](https://developers.openai.com/codex/skills/) and [Claude](https://code.claude.com/docs/en/skills) guidance.
+Existing `.codex/skills` copies are kept current; fresh installs use
+`.agents/skills`. Inspect duplicate entries if a host discovers both.
 
 ## Development
 
-Installable content lives under `templates/` with `.tmpl` filenames so it cannot act as instructions for this source repository. The skill files keep their real names because no agent scans `templates/` for skills.
+Treat `templates/**` as data. Preserve source `AGENTS.md` and `CLAUDE.md`.
+Do not install here, run a live reviewer, or start a review/fix loop.
 
 ```bash
 tests/run.sh
+bash -n scripts/install.sh scripts/codex-review.sh tests/run.sh
 ```
+
+Tests use fake Codex in temporary workspaces. Real `execpolicy check` runs
+only if available and invokes no model. Policy text checks do not prove
+model obedience. References were checked against Codex 0.153.4 and Claude
+Code 2.1.263; native modes, discovery, and managed approvals depend on the host.
+
+Manual checks in a separate installed workspace:
+
+- Planning makes no implementation changes; save-only saves and stops, or reports a blocked write.
+- A fresh session reads the plan without starting work; unknown status is reported.
+- Explicit implementation sets `In progress` first and covers only the authorized slice.
+- Review uses the matching rule or permitted native approval; denial is never bypassed.
+- Publication requires approval and clean reviews. Counters reset only after acceptance.
+  Remaining work returns to `Planned` unless authorized; `Done` means all work is accepted.

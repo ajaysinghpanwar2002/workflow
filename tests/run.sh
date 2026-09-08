@@ -44,6 +44,7 @@ fi
 
 SOURCE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 INSTALLER="$SOURCE_ROOT/scripts/install.sh"
+POLICY_CODEX="$(command -v codex || true)"
 
 test_root_created="$(mktemp -d "${TMPDIR:-/tmp}/workflow-tests.XXXXXX")"
 TEST_ROOT="$(cd "$test_root_created" && pwd -P)"
@@ -170,7 +171,7 @@ run_fake_review() {
   local fake_root="$1"
   shift
   PATH="$fake_root/bin:$PATH" \
-    CODEX_SANDBOX_NETWORK_DISABLED=0 \
+    CODEX_SANDBOX_NETWORK_DISABLED="${TEST_NETWORK_DISABLED:-0}" \
     WORKFLOW_FAKE_CODEX=1 \
     FAKE_CODEX_RECORD_DIR="$fake_root/records" \
     FAKE_CODEX_OUTPUT="${TEST_CODEX_OUTPUT-No actionable findings.}" \
@@ -235,14 +236,35 @@ test_one_and_two_repositories() {
   assert_contains "$directory/two-output" '- service-a'
   assert_contains "$directory/two-output" '- service-b'
   assert_eq "$(cat "$directory/one/CLAUDE.md")" '@AGENTS.md'
+  assert_line "$directory/one/TASK_PLAN.md" 'Status: Planned'
+  assert_line "$directory/two/TASK_PLAN.md" 'Status: Planned'
+  assert_contains "$directory/one-output" 'Start `claude` or `codex` from:'
+  assert_not_contains "$directory/one-output" '--permission-mode plan'
+  assert_not_contains "$directory/one-output" '--ask-for-approval'
+}
+
+test_empty_bootstrap_then_repositories() {
+  local directory="$TEST_ROOT/bootstrap"
+  new_workspace "$directory/workspace"
+  install_into "$directory/workspace" >"$directory/output"
+  assert_contains "$directory/output" 'No repositories yet.'
+  assert_line "$directory/workspace/TASK_PLAN.md" 'Status: Planned'
+  assert_file "$directory/workspace/.agents/skills/workflow-review/SKILL.md"
+  cp "$directory/workspace/TASK_PLAN.md" "$directory/plan.before"
+  init_repo "$directory/workspace/service-a"
+  install_into "$directory/workspace" >/dev/null
+  printf '1\n' >"$directory/workspace/.agent/reviews/service-a/review-attempts"
+  init_repo "$directory/workspace/service-b"
+  install_into "$directory/workspace" --overwrite-all >/dev/null
+  assert_same_file "$directory/plan.before" "$directory/workspace/TASK_PLAN.md"
+  assert_file "$directory/workspace/service-a/.agent/AGENTS.md"
+  assert_file "$directory/workspace/service-b/.agent/AGENTS.md"
+  assert_line "$directory/workspace/.agent/reviews/service-a/review-attempts" '1'
+  assert_line "$directory/workspace/.agent/reviews/service-b/review-attempts" '0'
 }
 
 test_rejects_invalid_roots() {
   local directory="$TEST_ROOT/invalid-roots"
-  mkdir -p "$directory/empty"
-  if install_into "$directory/empty" >"$directory/empty.log" 2>&1; then return 1; fi
-  assert_not_exists "$directory/empty/AGENTS.md"
-
   mkdir -p "$directory/git-workspace"
   init_repo "$directory/git-workspace"
   init_repo "$directory/git-workspace/service-a"
@@ -269,36 +291,105 @@ test_worktrees_and_spaces() {
   assert_contains "$(exclude_file "$directory/workspace with spaces/service worktree")" '.agent/'
 }
 
+test_absolute_rules_and_conflicts() {
+  local directory="$TEST_ROOT/rules"
+  local workspace="$directory/work space 'single' \"double\" \\ & literal"
+  new_workspace "$workspace" service-a
+  mkdir -p "$directory/render-tmp"
+  ln -s "$workspace" "$directory/alias"
+  TMPDIR="$directory/render-tmp" install_into "$directory/alias" >"$directory/output"
+  local rules="$workspace/.codex/rules/agent-workflow.rules"
+  assert_contains "$rules" 'work space '\''single'\'' \"double\" \\ & literal/scripts/codex-review.sh'
+  assert_not_contains "$rules" '/alias/'
+  assert_not_contains "$rules" '@LAUNCHER_PATH@'
+  assert_contains "$directory/output" "$(printf '%q' "$workspace/scripts/codex-review.sh")"
+  local rendering_file
+  for rendering_file in "$directory/render-tmp"/workflow-rules.*; do
+    assert_not_exists "$rendering_file"
+  done
+  cp "$rules" "$directory/rules.before"
+
+  # Rendered rules participate in the same two-pass conflict handling.
+  printf '# local rule\n' >"$rules"
+  rm "$workspace/AGENTS.md"
+  if TMPDIR="$directory/render-tmp" install_with_answers "$workspace" 'q
+' >"$directory/abort.log" 2>&1; then return 1; fi
+  assert_not_exists "$workspace/AGENTS.md"
+  assert_line "$rules" '# local rule'
+  for rendering_file in "$directory/render-tmp"/workflow-rules.*; do
+    assert_not_exists "$rendering_file"
+  done
+  install_into "$workspace" --keep-all >/dev/null
+  assert_line "$rules" '# local rule'
+  install_into "$workspace" --overwrite-all >/dev/null
+  assert_same_file "$directory/rules.before" "$rules"
+  install_into "$workspace" >"$directory/reinstall.log"
+  assert_contains "$directory/reinstall.log" '0 created, 0 updated'
+
+  if [ -z "$POLICY_CODEX" ] || ! "$POLICY_CODEX" execpolicy check --help >"$directory/policy-help" 2>&1; then
+    printf 'SKIP: codex execpolicy check unavailable; rule matching not run.\n'
+    return 0
+  fi
+  # This is the only real Codex command in the suite; it does not invoke a model.
+  "$POLICY_CODEX" execpolicy check --pretty --rules "$rules" -- \
+    "$workspace/scripts/codex-review.sh" service-a >"$directory/match.json"
+  assert_contains "$directory/match.json" '"decision": "allow"'
+  local command_name
+  for command_name in codex bash sh env scripts/codex-review.sh ./scripts/codex-review.sh \
+    "$workspace/scripts/other.sh"; do
+    "$POLICY_CODEX" execpolicy check --pretty --rules "$rules" -- \
+      "$command_name" "$workspace/scripts/codex-review.sh" service-a >"$directory/nonmatch.json"
+    assert_not_contains "$directory/nonmatch.json" '"decision": "allow"'
+  done
+  printf 'Verified execpolicy matching and unrelated-command exclusion (no model).\n'
+}
+
 test_installs_skills_for_both_agents() {
   local directory="$TEST_ROOT/skills"
   new_workspace "$directory/workspace" service-a
   install_into "$directory/workspace" >/dev/null
-  local template="$SOURCE_ROOT/templates/skills/unslop/SKILL.md"
-  assert_same_file "$template" "$directory/workspace/.claude/skills/unslop/SKILL.md"
-  assert_same_file "$template" "$directory/workspace/.codex/skills/unslop/SKILL.md"
-  assert_contains "$directory/workspace/.claude/skills/unslop/SKILL.md" 'name: unslop'
+  local skill template
+  for skill in unslop workflow-review workflow-pr workflow-state; do
+    template="$SOURCE_ROOT/templates/skills/$skill/SKILL.md"
+    assert_same_file "$template" "$directory/workspace/.claude/skills/$skill/SKILL.md"
+    assert_same_file "$template" "$directory/workspace/.agents/skills/$skill/SKILL.md"
+    # Portable metadata keeps mandatory skills available without tool grants.
+    assert_eq "$(sed -n '2,/^---$/p' "$template" | sed '/^---$/d; /^name: /d; /^description: /d')" ''
+  done
+  assert_not_exists "$directory/workspace/.codex/skills"
+  mkdir -p "$directory/workspace/.codex/skills/unslop"
+  printf 'old skill\n' >"$directory/workspace/.codex/skills/unslop/SKILL.md"
+  install_into "$directory/workspace" --overwrite-all >/dev/null
+  assert_same_file "$SOURCE_ROOT/templates/skills/unslop/SKILL.md" "$directory/workspace/.codex/skills/unslop/SKILL.md"
   # Skills belong to the workspace, not to the reviewed repositories.
   assert_not_exists "$directory/workspace/service-a/.claude"
   assert_not_exists "$directory/workspace/service-a/.codex"
+  assert_not_exists "$directory/workspace/service-a/.agents"
 }
 
 test_idempotent_and_preserves_task_state() {
   local directory="$TEST_ROOT/idempotent"
   new_workspace "$directory/workspace" service-a
   install_into "$directory/workspace" >/dev/null
-  printf 'custom plan\n' >"$directory/workspace/TASK_PLAN.md"
+  printf '# Task\n\nStatus: In progress\n\nGoal: custom plan\n\nRepositories: service-a\n\nPlan:\n- Slice 1 accepted\n- Slice 2 authorized; preserve validation criteria\n\nBlocked:\n' >"$directory/workspace/TASK_PLAN.md"
+  cp "$directory/workspace/TASK_PLAN.md" "$directory/plan.before"
   printf 'custom request\n' >"$directory/workspace/.agent/initial-request.md"
   printf 'custom history\n' >"$directory/workspace/.agent/review-history.md"
   printf 'custom slice\n' >"$directory/workspace/service-a/.agent/current-slice.md"
   printf '1\n' >"$directory/workspace/.agent/reviews/service-a/review-attempts"
   install_into "$directory/workspace" >"$directory/second.log"
-  assert_eq "$(sed -n '1p' "$directory/workspace/TASK_PLAN.md")" 'custom plan'
+  assert_same_file "$directory/plan.before" "$directory/workspace/TASK_PLAN.md"
   assert_eq "$(sed -n '1p' "$directory/workspace/.agent/initial-request.md")" 'custom request'
   assert_eq "$(sed -n '1p' "$directory/workspace/.agent/review-history.md")" 'custom history'
   assert_eq "$(sed -n '1p' "$directory/workspace/service-a/.agent/current-slice.md")" 'custom slice'
   assert_eq "$(sed -n '1p' "$directory/workspace/.agent/reviews/service-a/review-attempts")" '1'
   assert_eq "$(grep -xcF '.agent/' "$(exclude_file "$directory/workspace/service-a")")" '1'
   assert_contains "$directory/second.log" '0 created, 0 updated'
+  install_into "$directory/workspace" --overwrite-all >"$directory/overwrite.log"
+  assert_same_file "$directory/plan.before" "$directory/workspace/TASK_PLAN.md"
+  assert_line "$directory/workspace/.agent/reviews/service-a/review-attempts" '1'
+  assert_line "$directory/workspace/.agent/review-history.md" 'custom history'
+  assert_line "$directory/workspace/service-a/.agent/current-slice.md" 'custom slice'
 }
 
 test_update_keeps_changed_files_without_an_answer() {
@@ -430,17 +521,19 @@ test_skips_source_repository_child() {
 test_review_argument_validation() {
   local directory="$TEST_ROOT/review-arguments"
   prepare_review_workspace "$directory"
+  make_fake_path "$directory/fake" >/dev/null
   local script="$directory/workspace/scripts/codex-review.sh"
-  if "$script" >"$directory/no-arg.log" 2>&1; then return 1; fi
+  if run_fake_review "$directory/fake" "$script" >"$directory/no-arg.log" 2>&1; then return 1; fi
   assert_contains "$directory/no-arg.log" 'Usage: codex-review.sh <repository>'
-  if "$script" 'service-a/nested' >"$directory/nested.log" 2>&1; then return 1; fi
-  if "$script" '..' >"$directory/dotdot.log" 2>&1; then return 1; fi
-  if "$script" '/tmp' >"$directory/outside.log" 2>&1; then return 1; fi
+  if run_fake_review "$directory/fake" "$script" 'service-a/nested' >"$directory/nested.log" 2>&1; then return 1; fi
+  if run_fake_review "$directory/fake" "$script" '..' >"$directory/dotdot.log" 2>&1; then return 1; fi
+  if run_fake_review "$directory/fake" "$script" '/tmp' >"$directory/outside.log" 2>&1; then return 1; fi
   mkdir -p "$directory/workspace/not-git"
-  if "$script" not-git >"$directory/not-git.log" 2>&1; then return 1; fi
-  if "$script" service-a service-a >"$directory/duplicate.log" 2>&1; then return 1; fi
+  if run_fake_review "$directory/fake" "$script" not-git >"$directory/not-git.log" 2>&1; then return 1; fi
+  if run_fake_review "$directory/fake" "$script" service-a service-a >"$directory/duplicate.log" 2>&1; then return 1; fi
   assert_contains "$directory/duplicate.log" 'Repository listed more than once: service-a'
   assert_eq "$(sed -n '1p' "$directory/workspace/.agent/reviews/service-a/review-attempts")" '0'
+  assert_not_exists "$directory/fake/records/count"
 }
 
 test_review_validates_every_repository_before_starting() {
@@ -582,9 +675,11 @@ test_review_prints_the_failure_tail_itself() {
 test_review_rejects_a_git_workspace() {
   local directory="$TEST_ROOT/review-git-workspace"
   prepare_review_workspace "$directory"
+  make_fake_path "$directory/fake" >/dev/null
   git -C "$directory/workspace" init -q
-  if "$directory/workspace/scripts/codex-review.sh" service-a >"$directory/output" 2>&1; then return 1; fi
+  if run_fake_review "$directory/fake" "$directory/workspace/scripts/codex-review.sh" service-a >"$directory/output" 2>&1; then return 1; fi
   assert_contains "$directory/output" 'The workspace root must not be a Git repository or inside one'
+  assert_not_exists "$directory/fake/records/count"
 }
 
 test_review_targets_only_the_selected_repository() {
@@ -597,11 +692,77 @@ test_review_targets_only_the_selected_repository() {
   assert_eq "$(sed -n '1p' "$directory/fake/records/git-root")" "$directory/workspace/service-a"
   assert_contains "$directory/fake/records/args" 'review'
   assert_contains "$directory/fake/records/args" '--uncommitted'
+  assert_contains "$directory/fake/records/args" '--ephemeral'
+  assert_contains "$directory/fake/records/args" '--sandbox'
+  assert_line "$directory/fake/records/args" 'read-only'
+  assert_line "$directory/fake/records/args" 'approval_policy="never"'
+  assert_line "$directory/fake/records/args" 'gpt-6-astra'
+  assert_line "$directory/fake/records/args" 'review_model="gpt-6-astra"'
+  assert_line "$directory/fake/records/args" 'model_reasoning_effort="high"'
   assert_contains "$directory/fake/records/git-status" 'change.txt'
   assert_not_contains "$directory/fake/records/git-status" 'sibling.txt'
   assert_file "$directory/workspace/service-a/.agent/latest-codex-review.md"
   assert_not_exists "$directory/workspace/service-b/.agent/latest-codex-review.md"
   assert_eq "$(sed -n '1p' "$directory/workspace/.agent/reviews/service-b/review-attempts")" '0'
+  CODEX_REVIEW_MODEL=fixture-model CODEX_REVIEW_REASONING_EFFORT=medium \
+    run_fake_review "$directory/fake" "$directory/workspace/scripts/codex-review.sh" service-a >/dev/null
+  assert_line "$directory/fake/records/args" 'fixture-model'
+  assert_line "$directory/fake/records/args" 'review_model="fixture-model"'
+  assert_line "$directory/fake/records/args" 'model_reasoning_effort="medium"'
+  assert_line "$directory/fake/records/args" 'approval_policy="never"'
+}
+
+test_blocked_launches_preserve_attempts_and_evidence() {
+  local directory="$TEST_ROOT/blocked launch 'quotes'"
+  prepare_review_workspace "$directory"
+  make_reviewable "$directory/workspace" service-b
+  make_fake_path "$directory/fake" >/dev/null
+  local script="$directory/workspace/scripts/codex-review.sh"
+  local state="$directory/workspace/.agent/reviews/service-a"
+  local evidence="$directory/workspace/service-a/.agent"
+  printf '1\n' >"$state/review-attempts"
+  printf 'latest review\n' >"$evidence/latest-codex-review.md"
+  printf 'previous review\n' >"$evidence/previous-codex-review.md"
+  printf 'test evidence\n' >"$evidence/latest-test-output.txt"
+  printf 'run evidence\n' >"$state/latest-codex-review-run.log"
+  printf 'pending evidence\n' >"$state/pending-codex-review.md"
+  # Even a legacy counter must stay in place when startup is blocked.
+  mv "$directory/workspace/.agent/reviews/service-b/review-attempts" \
+    "$directory/workspace/service-b/.agent/review-attempts"
+  cp -R "$directory/workspace/.agent" "$directory/state.before"
+  cp -R "$evidence" "$directory/evidence.before"
+  cp -R "$directory/workspace/service-b/.agent" "$directory/legacy.before"
+
+  TEST_NETWORK_DISABLED=1
+  if run_fake_review "$directory/fake" "$script" service-a service-b >"$directory/guard.log" 2>&1; then return 1; fi
+  unset TEST_NETWORK_DISABLED
+  assert_not_exists "$directory/fake/records/count"
+  assert_contains "$directory/guard.log" 'Reviewer not started: CODEX_SANDBOX_NETWORK_DISABLED=1.'
+  assert_contains "$directory/guard.log" 'No review attempt was consumed.'
+  assert_contains "$directory/guard.log" "host's native"
+  assert_contains "$directory/guard.log" 'Check project trust and the project-local command rule.'
+  assert_contains "$directory/guard.log" 'If escalation is forbidden or denied, stop'
+  assert_contains "$directory/guard.log" 'normal local terminal'
+  assert_line "$directory/guard.log" "Command:$(printf ' %q' "$script" service-a service-b)"
+  diff -r "$directory/state.before" "$directory/workspace/.agent"
+  diff -r "$directory/evidence.before" "$evidence"
+  diff -r "$directory/legacy.before" "$directory/workspace/service-b/.agent"
+
+  # Restrict PATH to launcher preflight dependencies, deliberately omitting Codex.
+  mkdir "$directory/no-codex"
+  local dependency
+  for dependency in bash dirname git sed grep; do
+    ln -s "$(command -v "$dependency")" "$directory/no-codex/$dependency"
+  done
+  if PATH="$directory/no-codex" CODEX_SANDBOX_NETWORK_DISABLED=0 \
+    "$script" service-a service-b >"$directory/missing.log" 2>&1; then return 1; fi
+  assert_contains "$directory/missing.log" 'Reviewer not started: Codex executable not found on PATH.'
+  assert_contains "$directory/missing.log" 'No review attempt was consumed. Install Codex or correct PATH'
+  assert_line "$directory/missing.log" "Command:$(printf ' %q' "$script" service-a service-b)"
+  assert_not_exists "$directory/fake/records/count"
+  diff -r "$directory/state.before" "$directory/workspace/.agent"
+  diff -r "$directory/evidence.before" "$evidence"
+  diff -r "$directory/legacy.before" "$directory/workspace/service-b/.agent"
 }
 
 test_review_attempt_limit() {
@@ -676,38 +837,59 @@ test_templates_capture_required_policy() {
   local entry="$SOURCE_ROOT/templates/workspace/AGENTS.md.tmpl"
   local reviewer="$SOURCE_ROOT/templates/repository/AGENTS.md.tmpl"
   local implementer="$SOURCE_ROOT/templates/workspace/IMPLEMENTER.md.tmpl"
+  local review="$SOURCE_ROOT/templates/skills/workflow-review/SKILL.md"
+  local publication="$SOURCE_ROOT/templates/skills/workflow-pr/SKILL.md"
+  local state="$SOURCE_ROOT/templates/skills/workflow-state/SKILL.md"
+  # These check policy presence, not whether a model will obey the instructions.
   assert_eq "$(cat "$SOURCE_ROOT/templates/workspace/CLAUDE.md.tmpl")" '@AGENTS.md'
-  assert_contains "$entry" 'root `AGENTS.md` and `CLAUDE.md`'
+  assert_contains "$entry" 'Read `TASK_PLAN.md`'
+  assert_contains "$entry" '`TASK_PLAN.md` and stop. Implement only when explicitly asked.'
+  assert_not_contains "$entry" 'Plan Mode'
+  assert_not_contains "$entry" 'Not started'
   assert_contains "$entry" "Never follow a repository's \`.agent/AGENTS.md\`"
   assert_contains "$entry" 'unslop'
   assert_contains "$reviewer" '- edit files'
   assert_contains "$reviewer" '- run mutating commands'
   assert_contains "$reviewer" 'read the workspace root'
   assert_contains "$reviewer" 'Read nothing else above the repository.'
-  assert_contains "$implementer" '.agent/reviews/<repository>/'
-  assert_contains "$implementer" 'Never open a review run log.'
-  assert_contains "$implementer" 'paid for again in every session that follows'
-  assert_contains "$implementer" 'Files survive a compaction. Context does not.'
+  assert_contains "$reviewer" '- launch another reviewer'
+  assert_contains "$reviewer" 'failure mode left unprotected.'
+  assert_contains "$implementer" '## Change discipline'
+  assert_contains "$implementer" 'Do not omit important tests to make the diff look smaller.'
+  assert_contains "$implementer" 'save-only request, or read-only question'
+  assert_contains "$implementer" 'Set `In progress` before'
+  assert_contains "$implementer" 'Explain missing or unknown status and stop.'
+  assert_not_contains "$implementer" 'Not started'
   assert_contains "$implementer" 'Two review attempts per repository per slice. Never a third.'
-  assert_contains "$implementer" 'unslop'
-  assert_not_contains "$implementer" 'Caveman'
-  assert_not_contains "$implementer" 'Ponytail'
-  assert_contains "$implementer" 'WORK_ITEM="$(basename "$(pwd -P)")"'
-  assert_contains "$implementer" '--base staging'
-  assert_contains "$implementer" '--title "$WORK_ITEM"'
-  assert_contains "$implementer" 'promotion PRs from `staging` to `release`'
-  assert_contains "$implementer" 'without explicit user approval'
-  assert_contains "$implementer" 'The slice is clean only when every changed repository has a clean latest review.'
-  assert_contains "$implementer" 'scripts/codex-review.sh service-a service-b'
-  assert_contains "$implementer" 'Do not load it while editing code.'
-  assert_contains "$SOURCE_ROOT/templates/skills/unslop/SKILL.md" 'Skip it while editing code.'
+  assert_contains "$implementer" 'WORK_ITEM="$(basename "$WORKSPACE_ROOT")"'
+  assert_contains "$implementer" 'origin/staging'
+  assert_contains "$implementer" 'each need explicit user approval.'
+  assert_contains "$implementer" 'Never commit before independent review of uncommitted changes.'
+  assert_contains "$implementer" 'Further changes invalidate approval. Never self-approve.'
+  assert_contains "$implementer" 'if one is unavailable, report it and stop at its gate.'
+  assert_not_contains "$implementer" 'gh pr create'
+  assert_not_contains "$implementer" '## Review limit'
+  assert_contains "$review" 'Use the real path as a standalone command.'
+  assert_contains "$review" 'retry a denial another way.'
+  assert_contains "$review" 'never open the full run log.'
+  assert_contains "$publication" '--base staging'
+  assert_contains "$publication" '--title "$WORK_ITEM"'
+  assert_contains "$publication" 'lookup failure is'
+  assert_contains "$publication" 'Create only after a successful empty lookup:'
+  assert_contains "$publication" 'Check the full branch-to-staging diff'
+  assert_contains "$state" 'After user acceptance and any authorized publication'
+  assert_contains "$state" 'otherwise `Planned` unless the next'
+  assert_contains "$state" '`.agent/reviews/<repository>/` directory.'
+  assert_contains "$SOURCE_ROOT/templates/skills/unslop/SKILL.md" 'Skip code, identifiers, logs, tests, and inline comments.'
 }
 
 run_test 'source templates stay inert in this repository' test_source_template_isolation
 run_test 'only one installer remains' test_single_installer_is_the_only_installer
 run_test 'installer handles one and two repositories' test_one_and_two_repositories
+run_test 'empty bootstrap grows into one and two repositories' test_empty_bootstrap_then_repositories
 run_test 'installer rejects invalid roots and arguments' test_rejects_invalid_roots
 run_test 'installer supports worktrees and spaces' test_worktrees_and_spaces
+run_test 'absolute rules escape paths and preserve managed conflicts' test_absolute_rules_and_conflicts
 run_test 'installer installs skills for Claude and Codex' test_installs_skills_for_both_agents
 run_test 'reinstall is idempotent and preserves task state' test_idempotent_and_preserves_task_state
 run_test 'update keeps changed files when no answer is given' test_update_keeps_changed_files_without_an_answer
@@ -728,6 +910,7 @@ run_test 'review reports slice size and hands over the review' test_review_repor
 run_test 'review prints the failure tail itself' test_review_prints_the_failure_tail_itself
 run_test 'review rejects a Git workspace root' test_review_rejects_a_git_workspace
 run_test 'review targets only the selected repository' test_review_targets_only_the_selected_repository
+run_test 'blocked launches preserve attempts and evidence' test_blocked_launches_preserve_attempts_and_evidence
 run_test 'review attempts stop after two launches' test_review_attempt_limit
 run_test 'review validation failures do not consume attempts' test_review_validation_does_not_increment
 run_test 'failed and empty reviews consume attempts without approval' test_failed_and_empty_reviews_consume_attempts
