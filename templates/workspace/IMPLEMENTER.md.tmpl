@@ -33,23 +33,26 @@ large changes and agree on a coherent split instead of expanding the slice.
 
 ## Branch
 
-Set `WORKSPACE_ROOT` to the canonical absolute directory containing this
-file, regardless of the shell's current directory.
+Set `WORKSPACE_ROOT` to the canonical absolute directory containing this file, regardless of the shell's current directory.
 
 ```bash
 WORK_ITEM="$(basename "$WORKSPACE_ROOT")"
 git check-ref-format --branch "$WORK_ITEM"
 ```
 
-Use that exact branch in each changed repository:
+Before creating a new branch, if `WORK_ITEM` does not start with `REC-`, ask the user to confirm the branch name.
 
-- Already on it: continue, preserving unrelated work.
-- Another branch with uncommitted work: stop and ask the user.
-- Clean: fetch staging; reuse the existing local or remote work-item branch,
-  or create it from `origin/staging`.
+Use `staging` as the base branch. If `origin/staging` does not exist, stop and ask the user which base branch to use. Never guess.
 
-Never discard unrelated work, reset, force-switch, or force-push.
-PRs target staging only; no release, master, or promotion PRs.
+Use the exact `WORK_ITEM` branch in each changed repository:
+
+* Already on it: continue, preserving unrelated work.
+* Another branch with uncommitted work: stop and ask the user.
+* Clean: fetch the selected base; reuse the existing local or remote work-item
+  branch, or create it from `origin/<base>`.
+
+Never discard unrelated work, reset, force-switch, or force-push. 
+PRs target the selected base branch. Never create promotion PRs.
 
 ## Per repository
 

@@ -5,29 +5,14 @@ description: Publish explicitly authorized changes after passing checks and clea
 
 # Publish
 
-Require explicit approval for each publishing action, passing checks, and
-current clean independent reviews for every changed repository. Stop if missing.
+Require explicit approval for each publishing action, passing checks, and current clean independent reviews for every changed repository. Stop if any gate is missing.
 
 Use the canonical workspace name as `WORK_ITEM`, branch, and exact PR title.
-Check the full branch-to-staging diff for unrelated scope. Stage only intended
-changes; commit and push only as authorized. Never force-push.
 
-In each repository, look up the open PR first. Reuse it; lookup failure is
-an error.
+Check the full branch-to-staging diff for unrelated scope. Stage only intended changes; commit and push only as authorized. Never force-push.
 
-```bash
-gh pr list --head "$WORK_ITEM" --base staging --state open --json url --jq '.[0].url // empty'
-```
+Before creating a PR, look for an existing open PR for the same branch and base. Reuse it. Stop on lookup failure; never create duplicates.
 
-Create only after a successful empty lookup:
+Use an absolute `PR_BODY_FILE` and `unslop` for the PR body. Write for a human reviewer with no workflow context. Keep Summary and Tests concise, including important validation omissions. Do not mention slices, workflow state, review attempts, or other workflow internals.
 
-```bash
-gh pr create --base staging --head "$WORK_ITEM" --title "$WORK_ITEM" --body-file "$PR_BODY_FILE"
-```
-
-Use an absolute `PR_BODY_FILE`. Keep Summary, Tests, and Review sections short:
-behavior change; checks and outcomes, including omissions; "Codex clean after
-attempt N/2" only when true. No transcripts.
-
-Report the URL or failure. Never create duplicates, merge, target release or
-master, or create promotion PRs. Use `workflow-state` for accepted completion.
+Report the PR URL or failure. Never merge or create promotion PRs. Use `workflow-state` for accepted completion.
