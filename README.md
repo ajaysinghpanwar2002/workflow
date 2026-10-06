@@ -124,7 +124,7 @@ in `.agent/latest-test-output.txt`; some checks cannot run in a read-only review
 
 The child uses `codex exec ... review --uncommitted`, `--sandbox read-only`,
 `--ephemeral`, and `--config 'approval_policy="never"'`. Defaults remain
-`gpt-6-astra` and high reasoning; `CODEX_REVIEW_MODEL` and
+`gpt-6.1-sol` and high reasoning; `CODEX_REVIEW_MODEL` and
 `CODEX_REVIEW_REASONING_EFFORT` override them.
 
 ## Review startup troubleshooting
