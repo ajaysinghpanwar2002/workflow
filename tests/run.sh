@@ -350,7 +350,7 @@ test_installs_skills_for_both_agents() {
   new_workspace "$directory/workspace" service-a
   install_into "$directory/workspace" >/dev/null
   local skill template
-  for skill in unslop workflow-review workflow-pr workflow-state; do
+  for skill in unslop workflow-review workflow-pr workflow-state postman-api; do
     template="$SOURCE_ROOT/templates/skills/$skill/SKILL.md"
     assert_same_file "$template" "$directory/workspace/.claude/skills/$skill/SKILL.md"
     assert_same_file "$template" "$directory/workspace/.agents/skills/$skill/SKILL.md"
@@ -833,6 +833,7 @@ test_templates_capture_required_policy() {
   local review="$SOURCE_ROOT/templates/skills/workflow-review/SKILL.md"
   local publication="$SOURCE_ROOT/templates/skills/workflow-pr/SKILL.md"
   local state="$SOURCE_ROOT/templates/skills/workflow-state/SKILL.md"
+  local postman="$SOURCE_ROOT/templates/skills/postman-api/SKILL.md"
   # These check policy presence, not whether a model will obey the instructions.
   assert_eq "$(cat "$SOURCE_ROOT/templates/workspace/CLAUDE.md.tmpl")" '@AGENTS.md'
   assert_contains "$entry" 'Read `TASK_PLAN.md`'
@@ -876,6 +877,13 @@ test_templates_capture_required_policy() {
   assert_contains "$state" 'otherwise `Planned` unless the next'
   assert_contains "$state" '`.agent/reviews/<repository>/` directory.'
   assert_contains "$SOURCE_ROOT/templates/skills/unslop/SKILL.md" 'Skip code, identifiers, logs, tests, and inline comments.'
+  assert_contains "$implementer" 'load `postman-api`'
+  assert_contains "$postman" 'b0a149fb-80c9-4e8b-8916-bcebf4f54290'
+  assert_contains "$postman" 'Use stage unless the user asks for prod.'
+  assert_contains "$postman" 'Always try the call first.'
+  assert_contains "$postman" 'ask them to switch to the company VPN'
+  assert_contains "$postman" 'Never change network or VPN settings yourself'
+  assert_contains "$postman" 'Ask before any request that creates, updates, or deletes data'
 }
 
 run_test 'source templates stay inert in this repository' test_source_template_isolation

@@ -174,6 +174,8 @@ See [approval settings](https://learn.chatgpt.com/docs/agent-approvals-security)
 - `workflow-pr`: authorized commits, pushes, and staging PRs.
 - `workflow-state`: progress, accepted history, and cleanup.
 - `unslop`: short local writing instructions for human-facing prose.
+- `postman-api`: service API calls through the Postman CLI, stage by default,
+  with a VPN check when a host is unreachable.
 
 Skills load when needed; they never grant approval or replace required checks.
 Loaded instructions remain in context. Missing skills must be reported.
