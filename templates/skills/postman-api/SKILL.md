@@ -61,7 +61,7 @@ Do not print secret values or use `--show-secrets` unless the user asks. If a re
 ## VPN
 
 These services are on private internal addresses and need the company VPN.
-The user is usually connected to ProtonVPN instead.
+The user is usually connected to a production VPN.
 
 Always try the call first. An HTTP response of any status means the service is reachable; debug it as an API result, not a VPN issue.
 
