@@ -176,6 +176,8 @@ See [approval settings](https://learn.chatgpt.com/docs/agent-approvals-security)
 - `unslop`: short local writing instructions for human-facing prose.
 - `postman-api`: service API calls through the Postman CLI, stage by default,
   with a VPN check when a host is unreachable.
+- `stage-local-run`: run a service or worker locally with the stage AWS
+  profile and a private env file kept outside every repository.
 
 Skills load when needed; they never grant approval or replace required checks.
 Loaded instructions remain in context. Missing skills must be reported.

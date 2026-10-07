@@ -350,7 +350,7 @@ test_installs_skills_for_both_agents() {
   new_workspace "$directory/workspace" service-a
   install_into "$directory/workspace" >/dev/null
   local skill template
-  for skill in unslop workflow-review workflow-pr workflow-state postman-api; do
+  for skill in unslop workflow-review workflow-pr workflow-state postman-api stage-local-run; do
     template="$SOURCE_ROOT/templates/skills/$skill/SKILL.md"
     assert_same_file "$template" "$directory/workspace/.claude/skills/$skill/SKILL.md"
     assert_same_file "$template" "$directory/workspace/.agents/skills/$skill/SKILL.md"
@@ -834,6 +834,7 @@ test_templates_capture_required_policy() {
   local publication="$SOURCE_ROOT/templates/skills/workflow-pr/SKILL.md"
   local state="$SOURCE_ROOT/templates/skills/workflow-state/SKILL.md"
   local postman="$SOURCE_ROOT/templates/skills/postman-api/SKILL.md"
+  local stage_run="$SOURCE_ROOT/templates/skills/stage-local-run/SKILL.md"
   # These check policy presence, not whether a model will obey the instructions.
   assert_eq "$(cat "$SOURCE_ROOT/templates/workspace/CLAUDE.md.tmpl")" '@AGENTS.md'
   assert_contains "$entry" 'Read `TASK_PLAN.md`'
@@ -886,6 +887,13 @@ test_templates_capture_required_policy() {
   assert_contains "$postman" 'ask them to switch to the company VPN'
   assert_contains "$postman" 'Never change network or VPN settings yourself'
   assert_contains "$postman" 'Ask before any request that creates, updates, or deletes data'
+  assert_contains "$implementer" 'load `stage-local-run`'
+  assert_contains "$stage_run" 'Stage only. Never run against prod'
+  assert_contains "$stage_run" 'ptlp-jit-stage-admin'
+  assert_contains "$stage_run" '~/.config/agent-envs/<service>.stage.env'
+  assert_contains "$stage_run" 'Never ask them to paste env values into the chat.'
+  assert_contains "$stage_run" 'Never print env values, copy the file into a repository, or commit it.'
+  assert_contains "$stage_run" 'Ask before starting a worker that consumes a shared queue'
 }
 
 run_test 'source templates stay inert in this repository' test_source_template_isolation
