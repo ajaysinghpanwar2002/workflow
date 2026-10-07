@@ -178,8 +178,10 @@ See [approval settings](https://learn.chatgpt.com/docs/agent-approvals-security)
   with a VPN check when a host is unreachable.
 - `stage-local-run`: run a service or worker locally with the stage AWS
   profile and a private env file kept outside every repository, pulled
-  from Consul when missing.
+  from Consul when missing. Bundles `consul-env-pull.sh` and
+  `consul-env-push.sh`; both need `CONSUL_ADDR` and `CONSUL_TOKEN` exported.
 
+Skill `scripts/` folders install next to their `SKILL.md`.
 Skills load when needed; they never grant approval or replace required checks.
 Loaded instructions remain in context. Missing skills must be reported.
 Check discovery in Codex `/skills` or Claude's skill menu. Install paths follow

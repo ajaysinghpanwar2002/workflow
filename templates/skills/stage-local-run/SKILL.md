@@ -37,20 +37,22 @@ Do not edit the file; report a broken value to the user instead.
 
 ## Pull from Consul
 
-Use the pull script when the env file is missing or the user asks to refresh it:
+Use the pull script in this skill's `scripts/` folder when the env file is
+missing or the user asks to refresh it. From the workspace root, it is under
+`.claude/skills/stage-local-run/` or `.agents/skills/stage-local-run/`:
 
 ```bash
 BASE_PATH=configs/stage/<consul-service> \
 OUT_FILE=~/.config/agent-envs/<service>.stage.env \
-~/.config/agent-envs/consul-env-pull.sh
+<skill-dir>/scripts/consul-env-pull.sh
 ```
 
-`BASE_PATH` must start with `configs/stage/`. If the Consul folder name is
-unclear, ask the user; do not guess. The script needs `CONSUL_TOKEN` in the
-environment. If it is unset, ask the user to export it in their shell profile;
-never ask for the token in the chat or print it. If Consul is unreachable,
-ask the user to switch to the company VPN. If the pull script is missing,
-ask the user to restore it.
+`BASE_PATH` must start with `configs/stage/`. Folders are usually the service
+name, with workers as `<service>-<worker>`. If the folder is unclear, ask the
+user; do not guess. The script needs `CONSUL_ADDR` and `CONSUL_TOKEN` in the
+environment. If either is unset, ask the user to export it in their shell
+profile; never ask for the token in the chat or print it. If Consul is
+unreachable, ask the user to switch to the company VPN.
 
 Never run `consul-env-push.sh`. Pushing env changes to Consul is the user's job.
 

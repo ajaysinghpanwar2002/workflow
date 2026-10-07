@@ -357,6 +357,14 @@ test_installs_skills_for_both_agents() {
     # Portable metadata keeps mandatory skills available without tool grants.
     assert_eq "$(sed -n '2,/^---$/p' "$template" | sed '/^---$/d; /^name: /d; /^description: /d')" ''
   done
+  local script
+  for script in consul-env-pull.sh consul-env-push.sh; do
+    template="$SOURCE_ROOT/templates/skills/stage-local-run/scripts/$script"
+    assert_same_file "$template" "$directory/workspace/.claude/skills/stage-local-run/scripts/$script"
+    assert_same_file "$template" "$directory/workspace/.agents/skills/stage-local-run/scripts/$script"
+    [ -x "$directory/workspace/.claude/skills/stage-local-run/scripts/$script" ]
+    [ -x "$directory/workspace/.agents/skills/stage-local-run/scripts/$script" ]
+  done
   assert_not_exists "$directory/workspace/.codex/skills"
   mkdir -p "$directory/workspace/.codex/skills/unslop"
   printf 'old skill\n' >"$directory/workspace/.codex/skills/unslop/SKILL.md"
@@ -894,10 +902,97 @@ test_templates_capture_required_policy() {
   assert_contains "$stage_run" 'Never ask them to paste env values into the chat.'
   assert_contains "$stage_run" 'Never print env values, copy the file into a repository, or commit it.'
   assert_contains "$stage_run" 'Ask before starting a worker that consumes a shared queue'
-  assert_contains "$stage_run" '~/.config/agent-envs/consul-env-pull.sh'
+  assert_contains "$stage_run" '<skill-dir>/scripts/consul-env-pull.sh'
   assert_contains "$stage_run" '`BASE_PATH` must start with `configs/stage/`.'
   assert_contains "$stage_run" 'never ask for the token in the chat or print it.'
   assert_contains "$stage_run" 'Never run `consul-env-push.sh`.'
+}
+
+test_consul_env_scripts_round_trip() {
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'Skipped Consul env round trip: jq is unavailable.\n'
+    return 0
+  fi
+  local directory="$TEST_ROOT/consul-env"
+  local scripts="$SOURCE_ROOT/templates/skills/stage-local-run/scripts"
+  local script
+  for script in "$scripts"/*.sh; do
+    # Internal hosts stay out of the public repository.
+    assert_not_contains "$script" 'pratilipi'
+  done
+  mkdir -p "$directory/bin"
+  local value_a='postgres://u:p@h:5432/db?a=1&b=2'
+  local value_b="it's \"x\" \$HOME \`id\` a  b"
+  printf '[{"Key":"configs/stage/svc/","Value":null},
+{"Key":"configs/stage/svc/A","Value":"%s"},
+{"Key":"configs/stage/svc/B","Value":"%s"},
+{"Key":"configs/stage/svc/EMPTY","Value":null},
+{"Key":"configs/stage/svc/nested/C","Value":"%s"}]\n' \
+    "$(printf '%s' "$value_a" | base64)" "$(printf '%s' "$value_b" | base64)" \
+    "$(printf 'skip' | base64)" >"$directory/kv.json"
+  # Fake curl: answers GETs from kv.json and records each PUT body.
+  cat >"$directory/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+header="$(cat)"
+[ "$header" = "X-Consul-Token: test-token" ] || exit 22
+url="" data="" put=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -X) put=1; shift ;;
+    --data-binary) data="$2"; shift ;;
+    http*) url="$1" ;;
+  esac
+  shift
+done
+if [ "$put" = 1 ]; then
+  key="${url%%\?*}"
+  printf '%s' "$data" >"$FAKE_CONSUL_DIR/put-${key##*/}"
+  printf '200'
+else
+  cat "$FAKE_CONSUL_DIR/kv.json"
+fi
+FAKE
+  chmod +x "$directory/bin/curl"
+
+  local env_file="$directory/out/svc.stage.env"
+  PATH="$directory/bin:$PATH" FAKE_CONSUL_DIR="$directory" CONSUL_ADDR=http://consul.test \
+    CONSUL_TOKEN=test-token BASE_PATH=configs/stage/svc OUT_FILE="$env_file" \
+    "$scripts/consul-env-pull.sh" >/dev/null
+  assert_eq "$(ls -l "$env_file" | cut -c1-10)" '-rw-------'
+  assert_eq "$(cut -d= -f1 "$env_file" | tr '\n' ' ')" 'A B EMPTY '
+  (
+    set -a
+    . "$env_file"
+    set +a
+    assert_eq "$A" "$value_a"
+    assert_eq "$B" "$value_b"
+    assert_eq "$EMPTY" ''
+  )
+
+  PATH="$directory/bin:$PATH" FAKE_CONSUL_DIR="$directory" CONSUL_ADDR=http://consul.test \
+    CONSUL_TOKEN=test-token BASE_PATH=configs/stage/svc ENV_FILE="$env_file" YES=1 \
+    "$scripts/consul-env-push.sh" >/dev/null
+  assert_eq "$(cat "$directory/put-A")" "$value_a"
+  assert_eq "$(cat "$directory/put-B")" "$value_b"
+  assert_eq "$(cat "$directory/put-EMPTY")" ''
+
+  # A declined prompt pushes nothing.
+  rm -f "$directory"/put-*
+  if printf 'n\n' | PATH="$directory/bin:$PATH" FAKE_CONSUL_DIR="$directory" \
+    CONSUL_ADDR=http://consul.test CONSUL_TOKEN=test-token BASE_PATH=configs/stage/svc \
+    ENV_FILE="$env_file" "$scripts/consul-env-push.sh" >/dev/null; then
+    exit 1
+  fi
+  assert_not_exists "$directory/put-A"
+
+  # An empty folder leaves the existing env file untouched.
+  printf '[]\n' >"$directory/kv.json"
+  if PATH="$directory/bin:$PATH" FAKE_CONSUL_DIR="$directory" CONSUL_ADDR=http://consul.test \
+    CONSUL_TOKEN=test-token BASE_PATH=configs/stage/svc OUT_FILE="$env_file" \
+    "$scripts/consul-env-pull.sh" >/dev/null 2>&1; then
+    exit 1
+  fi
+  assert_contains "$env_file" 'A='
 }
 
 run_test 'source templates stay inert in this repository' test_source_template_isolation
@@ -933,6 +1028,7 @@ run_test 'review validation failures do not consume attempts' test_review_valida
 run_test 'failed and empty reviews consume attempts without approval' test_failed_and_empty_reviews_consume_attempts
 run_test 'successful reviews rotate and replace artifacts' test_review_artifact_rotation_and_success
 run_test 'templates capture branch, PR, review, skill, and role policy' test_templates_capture_required_policy
+run_test 'Consul env scripts round-trip values' test_consul_env_scripts_round_trip
 
 printf '\n%s passed; %s failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

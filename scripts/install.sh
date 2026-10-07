@@ -224,16 +224,25 @@ plan_managed "$SOURCE_ROOT/templates/workspace/IMPLEMENTER.md.tmpl" "$WORKSPACE_
 plan_managed "$SOURCE_ROOT/scripts/codex-review.sh" "$WORKSPACE_ROOT/scripts/codex-review.sh"
 plan_managed "$rendered_rules" "$WORKSPACE_ROOT/.codex/rules/agent-workflow.rules"
 
+skill_scripts=()
 for skill_dir in "$SOURCE_ROOT"/templates/skills/*; do
   [ -f "$skill_dir/SKILL.md" ] || continue
   skill_name="$(basename "$skill_dir")"
-  plan_managed "$skill_dir/SKILL.md" "$WORKSPACE_ROOT/.claude/skills/$skill_name/SKILL.md"
-  plan_managed "$skill_dir/SKILL.md" "$WORKSPACE_ROOT/.agents/skills/$skill_name/SKILL.md"
+  skill_roots=("$WORKSPACE_ROOT/.claude/skills" "$WORKSPACE_ROOT/.agents/skills")
   # Keep existing legacy installs current without adding a second discovery
   # location to fresh workspaces.
   if [ -e "$WORKSPACE_ROOT/.codex/skills/$skill_name/SKILL.md" ] || [ -L "$WORKSPACE_ROOT/.codex/skills/$skill_name/SKILL.md" ]; then
-    plan_managed "$skill_dir/SKILL.md" "$WORKSPACE_ROOT/.codex/skills/$skill_name/SKILL.md"
+    skill_roots+=("$WORKSPACE_ROOT/.codex/skills")
   fi
+  for skill_root in "${skill_roots[@]}"; do
+    plan_managed "$skill_dir/SKILL.md" "$skill_root/$skill_name/SKILL.md"
+    # Skills may bundle helper scripts next to SKILL.md.
+    for script in "$skill_dir"/scripts/*; do
+      [ -f "$script" ] || continue
+      plan_managed "$script" "$skill_root/$skill_name/scripts/$(basename "$script")"
+      skill_scripts+=("$skill_root/$skill_name/scripts/$(basename "$script")")
+    done
+  done
 done
 
 for repository in ${repositories[@]+"${repositories[@]}"}; do
@@ -243,6 +252,9 @@ done
 apply_managed
 
 chmod +x "$WORKSPACE_ROOT/scripts/codex-review.sh"
+for script in ${skill_scripts[@]+"${skill_scripts[@]}"}; do
+  chmod +x "$script"
+done
 create_mutable_from_file "$SOURCE_ROOT/templates/workspace/TASK_PLAN.md.tmpl" "$WORKSPACE_ROOT/TASK_PLAN.md"
 create_mutable "$WORKSPACE_ROOT/.agent/initial-request.md" "# Initial Request
 "
