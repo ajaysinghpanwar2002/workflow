@@ -894,6 +894,10 @@ test_templates_capture_required_policy() {
   assert_contains "$stage_run" 'Never ask them to paste env values into the chat.'
   assert_contains "$stage_run" 'Never print env values, copy the file into a repository, or commit it.'
   assert_contains "$stage_run" 'Ask before starting a worker that consumes a shared queue'
+  assert_contains "$stage_run" '~/.config/agent-envs/consul-env-pull.sh'
+  assert_contains "$stage_run" '`BASE_PATH` must start with `configs/stage/`.'
+  assert_contains "$stage_run" 'never ask for the token in the chat or print it.'
+  assert_contains "$stage_run" 'Never run `consul-env-push.sh`.'
 }
 
 run_test 'source templates stay inert in this repository' test_source_template_isolation

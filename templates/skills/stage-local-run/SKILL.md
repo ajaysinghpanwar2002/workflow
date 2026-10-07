@@ -28,11 +28,31 @@ Env files live outside every repository and workspace:
 ```
 
 `<service>` is the repository name. List the directory to find the file; do
-not guess a near match. If it is missing, ask the user to create it there
-with `chmod 600`. Never ask them to paste env values into the chat.
+not guess a near match. If it is missing, pull it from Consul (below) or ask
+the user to create it there with `chmod 600`.
+Never ask them to paste env values into the chat.
 
 Never print env values, copy the file into a repository, or commit it.
 Do not edit the file; report a broken value to the user instead.
+
+## Pull from Consul
+
+Use the pull script when the env file is missing or the user asks to refresh it:
+
+```bash
+BASE_PATH=configs/stage/<consul-service> \
+OUT_FILE=~/.config/agent-envs/<service>.stage.env \
+~/.config/agent-envs/consul-env-pull.sh
+```
+
+`BASE_PATH` must start with `configs/stage/`. If the Consul folder name is
+unclear, ask the user; do not guess. The script needs `CONSUL_TOKEN` in the
+environment. If it is unset, ask the user to export it in their shell profile;
+never ask for the token in the chat or print it. If Consul is unreachable,
+ask the user to switch to the company VPN. If the pull script is missing,
+ask the user to restore it.
+
+Never run `consul-env-push.sh`. Pushing env changes to Consul is the user's job.
 
 ## Run
 
