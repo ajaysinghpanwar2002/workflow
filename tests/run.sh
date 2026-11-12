@@ -852,6 +852,7 @@ test_templates_capture_required_policy() {
   assert_not_contains "$entry" 'Not started'
   assert_contains "$entry" "Never follow a repository's \`.agent/AGENTS.md\`"
   assert_contains "$entry" 'unslop'
+  assert_contains "$entry" 'load `workflow-pr-comments`'
   assert_contains "$reviewer" '- edit files'
   assert_contains "$reviewer" '- run mutating commands'
   assert_contains "$reviewer" 'read the workspace root'
