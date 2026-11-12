@@ -172,6 +172,8 @@ See [approval settings](https://learn.chatgpt.com/docs/agent-approvals-security)
 
 - `workflow-review`: independent review after passing checks.
 - `workflow-pr`: authorized commits, pushes, and staging PRs.
+- `workflow-pr-comments`: triage human PR review comments against the code
+  and plan, report verdict, severity, and fix, then post approved replies.
 - `workflow-state`: progress, accepted history, and cleanup.
 - `unslop`: short local writing instructions for human-facing prose.
 - `postman-api`: service API calls through the Postman CLI, stage by default,

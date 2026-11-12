@@ -13,6 +13,6 @@ Check the full branch-to-staging diff for unrelated scope. Stage only intended c
 
 Before creating a PR, look for an existing open PR for the same branch and base. Reuse it. Stop on lookup failure; never create duplicates.
 
-Use an absolute `PR_BODY_FILE` and `unslop` for the PR body. Write for a human reviewer with no workflow context. Keep Summary and Tests concise, including important validation omissions. Do not mention slices, workflow state, review attempts, or other workflow internals.
+Use an absolute `PR_BODY_FILE` and `unslop` for the PR body. Write for a human reviewer with no workflow context. Keep Summary into Few Lines (As minimal as possible) and Tests concise, including important validation omissions. Do not mention slices, workflow state, review attempts, or other workflow internals.
 
 Report the PR URL or failure. Never merge or create promotion PRs. Use `workflow-state` for accepted completion.
